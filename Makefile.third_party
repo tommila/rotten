@@ -1,0 +1,31 @@
+# Directories
+PWD = $(shell pwd)
+THIRD_PARTY_DIR := $(PWD)/third_party
+SDL2_DIR := $(THIRD_PARTY_DIR)/SDL2
+CGLM_DIR := $(THIRD_PARTY_DIR)/cglm
+
+# Compiler and flags
+CXX := gcc
+CXXFLAGS := -Wall -Werror -Os
+
+# PKG_CONFIG path
+PKG_CONFIG_PATH := $(SDL2_DIR)/build/lib/pkgconfig:$(SDL2_DIR)/build/lib/pkgconfig
+
+.PHONY: help
+
+SDL2:
+	if [ ! -f $(SDL2_DIR)/config.status ]; then \
+		cd $(SDL2_DIR) &&\
+		mkdir -p build &&\
+		./configure --prefix=$(SDL2_DIR)/build;\
+	fi
+	cd $(SDL2_DIR) && make -j12 && make install
+
+clean-SDL2:
+	cd $(SDL2_DIR) && make clean && make distclean
+
+clean-build-SDL2: clean-SDL2 SDL2
+
+clean: clean-SDL2
+all: SDL2
+clean-build: clean all
