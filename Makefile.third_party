@@ -1,0 +1,62 @@
+# Directories
+PWD = $(shell pwd)
+THIRD_PARTY_DIR := $(PWD)/third_party
+SDL2_DIR := $(THIRD_PARTY_DIR)/SDL2
+IMGUI_DIR := $(THIRD_PARTY_DIR)/imgui
+CGLM_DIR := $(THIRD_PARTY_DIR)/cglm
+
+BGFX_DIR := $(THIRD_PARTY_DIR)/bgfx
+GENIE_BIN := $(THIRD_PARTY_DIR)/bx/tools/bin/linux/genie
+
+# Compiler and flags
+CXX := gcc
+CXXFLAGS := -Wall -Werror -Os
+
+# PKG_CONFIG path
+PKG_CONFIG_PATH := $(SDL2_DIR)/build/lib/pkgconfig:$(SDL2_DIR)/build/lib/pkgconfig
+
+.PHONY: help
+
+bgfx:
+	cd $(BGFX_DIR) && make clean
+	cd $(BGFX_DIR) && $(THIRD_PARTY_DIR)/bx/tools/bin/linux/genie --with-tools --gcc=linux-gcc gmake
+	cd $(BGFX_DIR) && export DEFINES="-DBGFX_CONFIG_MULTITHREADED=0" && make -R -C .build/projects/gmake-linux config=debug64 -j12
+
+clean-bgfx:
+	cd $(BGFX_DIR) && make clean
+
+clean-build-bgfx: clean-bgfx bgfx
+
+
+shaderc:
+	cd $(BGFX_DIR) && make shaderc -j12
+
+SDL2:
+	if [ ! -f $(SDL2_DIR)/config.status ]; then \
+		cd $(SDL2_DIR) &&\
+		mkdir -p build &&\
+		./configure --prefix=$(SDL2_DIR)/build;\
+	fi
+	cd $(SDL2_DIR) && make -j12 && make install
+
+clean-SDL2:
+	cd $(SDL2_DIR) && make clean && make distclean
+
+clean-build-SDL2: clean-SDL2 SDL2
+
+imgui:
+	cd $(IMGUI_DIR) && mkdir -p build
+
+	cd $(IMGUI_DIR) && \
+		$(CXX) imgui*.cpp -c $(CXXFLAGS) && \
+		ar rcs build/libImGui.a imgui*.o
+
+clean-imgui:
+	cd $(IMGUI_DIR) && \
+		rm -rf build
+
+clean-build-imgui: clean-imgui imgui
+
+clean: clean-imgui clean-SDL2 clean-bgfx
+all: bgfx SDL2 imgui
+clean-build: clean all
