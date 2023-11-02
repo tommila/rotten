@@ -36,10 +36,8 @@ cd build
 ```
 
 ## Tools
-- build-assets.sh
-  Copies all asset files from assets to build/assets and also compiles all the shaders. Using argument "-d" or "--daemon" the tool will build all assets on the run.
-- build-shaders.sh
-  Compiles all shaders with bgfx shaderc compiler.
+- `build-assets.sh` Copies all asset files from assets to build/assets and also compiles all the shaders.
+- `build-shaders.sh` Compiles all shaders with bgfx shaderc compiler.
 
 Both tools support daemon mode via user argument "-d" or "--daemon", meaning that all modified or copied assets in `assets/` folder are copied/build to `build/assets` folder.
 
