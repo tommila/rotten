@@ -1,6 +1,6 @@
 #include "cglm/struct/vec3.h"
 #include "cglm/vec3.h"
-#include "rotten.h"
+#include "car_game.h"
 
 typedef struct terrain_vs_uniform_params {
   mat4s mvp;
@@ -15,7 +15,7 @@ static vec2s terrainSizeInMeters = {2048.f, 2048.f};
 static vec2s heightMapImgSize = {1024.f, 1024.f};
 static vec2s geometrySize = {4096.f, 4096.f};
 static vec3s heightMapScale = {geometrySize.x / heightMapImgSize.x,
-			       geometrySize.y / heightMapImgSize.y, 50.f};
+			       geometrySize.y / heightMapImgSize.y, 80.f};
 
 static f32 terrainMeshGridSizeX = 1024.f;
 static f32 terrainMeshGridSizeY = 1024.f;
@@ -49,25 +49,7 @@ static void setPixel(stbi_uc *image, u32 imageWidth, u32 imageHeight,
   p[3] = rgba[3];
 }
 
-// static f32 getApproximateHeight(i32 x, i32 y, f32 u, f32 v,
-//                                        game_state *game) {
-//   i32 sizeX = geometrySize.x;
-//   i32 sizeY = geometrySize.y;
-
-//   i32 xPlusOne = (x == sizeX - 1) ? 0 : x + 1;
-//   i32 yPlusOne = (y == sizeY - 1) ? 0 : y + 1;
-
-//   f32 hA = game->terrain.geometry[sizeX * y + x];
-//   f32 hB = game->terrain.geometry[sizeX * y + xPlusOne];
-//   f32 hC = game->terrain.geometry[sizeX * yPlusOne + x];
-//   f32 hD = game->terrain.geometry[sizeX * yPlusOne + xPlusOne];
-
-//   // Bilinear interpolation
-//   return LERP(LERP(hA, hB, u), LERP(hC, hD, u), v);
-// }
-
-f32 getGeometryHeight(vec3s pos, game_state *game, vec3s *normOut,
-		      b32 print) {
+f32 getGeometryHeight(vec3s pos, game_state *game, vec3s *normOut) {
   i32 sizeX = heightMapImgSize.x;
   i32 sizeY = heightMapImgSize.y;
 
@@ -84,10 +66,8 @@ f32 getGeometryHeight(vec3s pos, game_state *game, vec3s *normOut,
 
   i32 xPlusOne = (x == sizeX - 1) ? 0 : x + 1;
   i32 yPlusOne = (y == sizeY - 1) ? 0 : y + 1;
-  i32 xMinusOne = (x == 0) ? sizeX - 1 : x - 1;
-  i32 yMinusOne = (y == 0) ? sizeY - 1 : y - 1;
 
-  // Approximate height (bilinear filtering)
+  // Approximate heights and normals
   vec4s c00 = game->terrain.geometry[sizeX * y + x];
   vec4s c10 = game->terrain.geometry[sizeX * y + xPlusOne];
   vec4s c01 = game->terrain.geometry[sizeX * yPlusOne + x];
@@ -98,22 +78,14 @@ f32 getGeometryHeight(vec3s pos, game_state *game, vec3s *normOut,
   vec3s n01 = {c01.y,c01.z,c01.w};
   vec3s n11 = {c11.y,c11.z,c11.w};
 
-  float a = c00.x * (1.f - u) + c10.x * u;
-  float b = c01.x * (1.f - u) + c11.x * u;
-  // f32 h  = a * (1.f - v) + b * v;
+  // Bilinear interpolate
+  f32 a = c00.x * (1.f - u) + c10.x * u;
+  f32 b = c01.x * (1.f - u) + c11.x * u;
+  f32 h = a * (1.f - v) + b * v;
 
-  f32 h = LERP(LERP(c00.x, c10.x, u), LERP(c01.x, c11.x, u), v);
-  vec3s normal = LERP(LERP(n00, n10, u), LERP(n01, n11, u), v);
-  // https://www.gamedev.net/forums/topic/417977-calculating-normals-from-2d-heightmap/3786610/
-  // finite distance method (??)
-  // vec3s normal;
-  // normal.x = c00.x - c10.x;
-  // normal.y = c00.x - c01.x;
-
-  // normal.x *= heightMapScale.z / heightMapScale.x;
-  // normal.y *= heightMapScale.z / heightMapScale.y;
-  // normal.z = heightMapScale.z;
-  // normal = glms_vec3_normalize(normal);
+  vec3s aN = n00 * (1.f - u) + n10 * u;
+  vec3s bN = n01 * (1.f - u) + n11 * u;
+  vec3s normal = aN * (1.f - v) + bN * v;
 
   *normOut = normal;
   return pos.z - h;
@@ -126,35 +98,45 @@ static void updateGeometryMesh(terrain_object *terrain, vec3s *meshVertices,
   //       as the heightmap pixel count
   for (i16 y = 0; y < img.height; y++) {
     for (i16 x = 0; x < img.width; x++) {
-      f32 height =
-          getPixel((stbi_uc *)img.pixels, img.width, img.height, (ivec2s){x, y})
-              .x;
-      f32 heightA = getPixel((stbi_uc *)img.pixels, img.width, img.height,
-                             (ivec2s){x + 1, y})
-                        .x;
-      f32 heightB = getPixel((stbi_uc *)img.pixels, img.width, img.height,
-                             (ivec2s){x - 1, y})
-                        .x;
-      f32 heightC = getPixel((stbi_uc *)img.pixels, img.width, img.height,
-                             (ivec2s){x, y + 1})
-                        .x;
-      f32 heightD = getPixel((stbi_uc *)img.pixels, img.width, img.height,
-                             (ivec2s){x, y - 1})
-                        .x;
-      vec3s normal;
-      normal.x = (heightB - heightA) / heightMapScale.x;
-      normal.y = (heightD - heightC) / heightMapScale.y;
-      normal.z = height * 2.f;
-      normal = glms_vec3_normalize(normal);
+      vec4s height = getPixel((stbi_uc *)img.pixels, img.width, img.height,
+                              (ivec2s){x, y});
+      vec4s heightA = getPixel((stbi_uc *)img.pixels, img.width, img.height,
+                               (ivec2s){x + 1, y});
+      vec4s heightB = getPixel((stbi_uc *)img.pixels, img.width, img.height,
+                               (ivec2s){x - 1, y});
+      vec4s heightC = getPixel((stbi_uc *)img.pixels, img.width, img.height,
+                               (ivec2s){x, y + 1});
+      vec4s heightD = getPixel((stbi_uc *)img.pixels, img.width, img.height,
+                               (ivec2s){x, y - 1});
+      vec3s normal  = glms_vec3_normalize((vec3s){height.y, height.z, height.w} * 2.f - (vec3s){1.f, 1.f, 1.f});
+      vec3s normalA = glms_vec3_normalize((vec3s){heightA.y, heightA.z, heightA.w} * 2.f - (vec3s){1.f, 1.f, 1.f});
+      vec3s normalB = glms_vec3_normalize((vec3s){heightB.y, heightB.z, heightB.w} * 2.f - (vec3s){1.f, 1.f, 1.f});
+      vec3s normalC = glms_vec3_normalize((vec3s){heightC.y, heightC.z, heightC.w} * 2.f - (vec3s){1.f, 1.f, 1.f});
+      vec3s normalD = glms_vec3_normalize((vec3s){heightD.y, heightD.z, heightD.w} * 2.f - (vec3s){1.f, 1.f, 1.f});
 
       vec3s v = meshVertices[(y * img.width) + x];
-      v.z = (height + heightA + heightB + heightC + heightD) / 5.f;
-      // v.z = height;
+
+      // Smooth the geometry and normals a bit
+      v.z = (height.x + heightA.x + heightB.x + heightC.x + heightD.x) / 5.f;
       v.z = v.z * heightMapScale.z - heightMapScale.z;
+      vec3s n = (normal + normalA + normalB + normalC + normalD) / 5.f;
+
       meshVertices[(y * img.width) + x] = v;
-      geometry[(y * img.width) + x] = (vec4s){v.z, normal.x, normal.y, normal.z};
+      geometry[(y * img.width) + x] = (vec4s){v.z, n.x, n.y, n.z};
     }
   }
+}
+
+static f32 calcHeight(stbi_uc* pixels, i16 w, i16 h, i16 x, i16 y){
+  while (x < 0) x += w;
+  while (y < 0) y += h;
+  x = x % w;
+  y = y % h;
+  f32 height = MAX(getPixel(pixels, w, h, (ivec2s){x, y}).x, 0.25f);
+  // f32 noise1 = sinf(((f32)y / (f32)w) * PI) * 4.f;
+  // height += noise1;
+
+  return height;
 }
 
 // Create normal map data from height map and embbed it back to height map
@@ -162,40 +144,29 @@ static void updateGeometryMesh(terrain_object *terrain, vec3s *meshVertices,
 static void embbedNormalMapData(img_data img) {
   i16 w = img.width, h = img.height;
 
-  for (i16 x = 0; x < img.width; x++) {
-    for (i16 y = 0; y < img.height; y++) {
-      f32 height = getPixel((stbi_uc *)img.pixels, w, h, (ivec2s){x, y}).x;
+  for (i16 x = 0; x < w; x++) {
+    for (i16 y = 0; y < h; y++) {
+      f32 height = calcHeight((stbi_uc *)img.pixels, w, h, x, y);
 
       f32 strength = heightMapScale.z;
 
-      f32 tl = getPixel((stbi_uc *)img.pixels, w, h, (ivec2s){x - 1, y - 1}).x;
-      f32 l = getPixel((stbi_uc *)img.pixels, w, h, (ivec2s){x - 1, y}).x;
-      f32 bl = getPixel((stbi_uc *)img.pixels, w, h, (ivec2s){x - 1, y + 1}).x;
-      f32 b = getPixel((stbi_uc *)img.pixels, w, h, (ivec2s){x, y + 1}).x;
-      f32 br = getPixel((stbi_uc *)img.pixels, w, h, (ivec2s){x + 1, y + 1}).x;
-      f32 r = getPixel((stbi_uc *)img.pixels, w, h, (ivec2s){x + 1, y}).x;
-      f32 tr = getPixel((stbi_uc *)img.pixels, w, h, (ivec2s){x + 1, y - 1}).x;
-      f32 t = getPixel((stbi_uc *)img.pixels, w, h, (ivec2s){x, y - 1}).x;
+      f32 l = calcHeight((stbi_uc *)img.pixels, w, h, x - 1, y);
+      f32 b = calcHeight((stbi_uc *)img.pixels, w, h, x, y + 1);
+      f32 r = calcHeight((stbi_uc *)img.pixels, w, h, x + 1, y);
+      f32 t = calcHeight((stbi_uc *)img.pixels, w, h, x, y - 1);
 
-      // Compute dx using Sobel:
-      //           -1 0 1
-      //           -2 0 2
-      //           -1 0 1
-      f32 dX = tr + 2.f * r + br - tl - 2.f * l - bl;
+      // Append normals as gba values
+      vec3s A  = {0, 0, height * heightMapScale.z};
+      vec3s B1 = {heightMapScale.y, 0, r * heightMapScale.z};
+      vec3s B2 = {-heightMapScale.y, 0, l * heightMapScale.z};
+      vec3s C1 = {0, heightMapScale.y, b * heightMapScale.z};
+      vec3s C2 = {0, -heightMapScale.y, t * heightMapScale.z};
+      vec3s n = LERP(calcNormal(A, B1, C1), calcNormal(A, B2, C2),0.5);
 
-      // Compute dy using Sobel:
-      //           -1 -2 -1
-      //            0  0  0
-      //            1  2  1
-      f32 dY = bl + 2.f * b + br - tl - 2.f * t - tr;
-
-      vec3s n = {dX, dY, 1.0f / strength};
-
-      n = glms_vec3_normalize(n);
       // Add normal map values as pixel y,z,w values.
       setPixel((stbi_uc *)img.pixels, w, h, (ivec2s){x, y},
-               {fmaxf(height,0.25f), (n.x * 0.5f) + 0.5f, (n.y * 0.5f) + 0.5f,
-                (n.z * 0.5f) + 0.5f});
+               {height, (n.x + 1.f) * 0.5f, (n.y + 1.f) * 0.5f,
+                (n.z + 1.f) * 0.5f});
     }
   }
 }
@@ -203,7 +174,7 @@ static void embbedNormalMapData(img_data img) {
 static void deleteTerrain(renderer_command_buffer *rendererBuffer,
                           game_state *game) {
   terrain_object *terrain = &game->terrain;
-  // Terrain
+  // Terrain mesh
   {
     renderer_command_free_image *cmd = renderer_pushCommandArray(
         rendererBuffer, renderer_command_free_image, 2);
@@ -242,8 +213,8 @@ static void deleteTerrain(renderer_command_buffer *rendererBuffer,
     terrain->terrain_model.pipelineHandle = 0;
     terrain->terrain_model.programHandle = 0;
   }
-  // geometry
 
+  // Terrain geometry
   {
     renderer_command_free_vertex_buffer *cmd = renderer_pushCommand(
         rendererBuffer, renderer_command_free_vertex_buffer);
@@ -270,6 +241,8 @@ static void createTerrain(memory_arena *permanentArena, memory_arena *tempArena,
   terrain_object *terrain = &state->terrain;
   img_data terrainImgData = importImage(tempArena, "assets/sand_base.png", 4);
   img_data heightMapImg = importImage(permanentArena, "assets/cell_noise.png", 4);
+
+  // Terrain images and samplers
   {
     renderer_command_create_image *cmd = renderer_pushCommandArray(
         rendererBuffer, renderer_command_create_image, 2);
@@ -293,7 +266,6 @@ static void createTerrain(memory_arena *permanentArena, memory_arena *tempArena,
     terrain->heightMapImg = heightMapImg;
 
     embbedNormalMapData(heightMapImg);
-
   }
   {
     renderer_command_create_sampler *cmd = renderer_pushCommandArray(
@@ -302,6 +274,78 @@ static void createTerrain(memory_arena *permanentArena, memory_arena *tempArena,
     cmd++;
     cmd->samplerHandle = &terrain->terrain_model.heightMapSamplerHandle;
   }
+  // Terrain mesh
+  {
+    mesh_data terrainMeshData = mesh_GridShape(
+      tempArena,
+      terrainMeshGridSizeX,
+      terrainMeshGridSizeY,
+      terrainMeshCellNumX,
+      terrainMeshCellNumY,
+      false, false, PRIMITIVE_TRIANGLES);
+
+    renderer_command_create_vertex_buffer *cmd = renderer_pushCommand(
+        rendererBuffer, renderer_command_create_vertex_buffer);
+    cmd->vertexData = terrainMeshData.vertexData;
+    cmd->indexData = terrainMeshData.indices;
+    cmd->vertexDataSize = sizeof(f32) * (terrainMeshData.vertexNum +
+					terrainMeshData.normalNum +
+					terrainMeshData.texCoordNum +
+					terrainMeshData.texCoordNum);
+    cmd->indexDataSize = sizeof(u32) * terrainMeshData.indexNum;
+    cmd->isStreamData = false;
+    cmd->vertexBufHandle = &terrain->terrain_model.vertexBufferHandle;
+    cmd->indexBufHandle = &terrain->terrain_model.indexBufferHandle;
+
+    terrain->terrain_model.elementNum = terrainMeshData.indexNum;
+    terrain->terrain_model.vertexBufferLayout = {
+      terrainMeshData.vertexNum * (u32)sizeof(f32),
+      terrainMeshData.normalNum * (u32)sizeof(f32),
+      terrainMeshData.texCoordNum * (u32)sizeof(f32),
+      terrainMeshData.colorNum * (u32)sizeof(f32)};
+  }
+  // Terrain pipelines and shaders
+  {
+    shader_data terrainShader =
+        importShader(tempArena, "./assets/shaders/terrain.vs",
+                     "./assets/shaders/terrain.fs");
+
+    renderer_command_create_program_pipeline *cmd = renderer_pushCommand(
+        rendererBuffer, renderer_command_create_program_pipeline);
+
+    cmd->fragmentShaderData = (char *)terrainShader.fsData;
+    cmd->vertexShaderData = (char *)terrainShader.vsData;
+    cmd->vertexUniformEntries = rt_renderer_allocUniformBuffer(tempArena, 8);
+    rt_renderer_pushUniformEntry(&cmd->vertexUniformEntries, mat4,
+                                 "mvp");
+    rt_renderer_pushUniformEntry(&cmd->vertexUniformEntries, vec2,
+                                 "offset");
+    rt_renderer_pushUniformEntry(&cmd->vertexUniformEntries, vec2,
+                                 "gridSize");
+    rt_renderer_pushUniformEntry(&cmd->vertexUniformEntries, vec2,
+                                 "gridCells");
+    rt_renderer_pushUniformEntry(&cmd->vertexUniformEntries, vec3,
+                                 "heightMapScale");
+    rt_renderer_pushUniformEntry(&cmd->vertexUniformEntries, vec3,
+                                 "scaleAndFallOf");
+
+    cmd->vertexSamplerEntries = rt_renderer_allocSamplerBuffer(tempArena, 4);
+    cmd->fragmentSamplerEntries = rt_renderer_allocSamplerBuffer(tempArena, 4);
+    rt_renderer_pushSamplerEntry(&cmd->vertexSamplerEntries, "height_map");
+    rt_renderer_pushSamplerEntry(&cmd->fragmentSamplerEntries, "terrain_tex");
+
+    cmd->layout = {.position = {.format = vertex_format_float3, .layoutIdx = 0},
+                   .normals = {.layoutIdx = -1},
+                   .uv = {.layoutIdx = -1},
+                   .color = {.layoutIdx = -1}};
+
+    cmd->depthTest = true;
+    cmd->shaderProgramHandle = &terrain->terrain_model.programHandle;
+    cmd->progPipelineHandle = &terrain->terrain_model.pipelineHandle;
+
+    terrain->terrain_model.vsUniformSize = cmd->vertexUniformEntries.bufferSize;
+  }
+  // Terrain geometry mesh
   {
     terrain->geometry = pushArray(permanentArena,
 				  heightMapImg.width * heightMapImg.height, vec4s);
@@ -337,77 +381,8 @@ static void createTerrain(memory_arena *permanentArena, memory_arena *tempArena,
       cmd->indexBufHandle = &terrain->geometry_model.indexBufferHandle;
     }
   }
-
+  // Terrain geometry shaders and piplines
   {
-    mesh_data terrainMeshData = mesh_GridShape(
-      tempArena,
-      terrainMeshGridSizeX,
-      terrainMeshGridSizeY,
-      terrainMeshCellNumX,
-      terrainMeshCellNumY,
-      false, false, PRIMITIVE_TRIANGLES);
-
-    renderer_command_create_vertex_buffer *cmd = renderer_pushCommand(
-        rendererBuffer, renderer_command_create_vertex_buffer);
-    cmd->vertexData = terrainMeshData.vertexData;
-    cmd->indexData = terrainMeshData.indices;
-    cmd->vertexDataSize = sizeof(f32) * (terrainMeshData.vertexNum +
-					terrainMeshData.normalNum +
-					terrainMeshData.texCoordNum +
-					terrainMeshData.texCoordNum);
-    cmd->indexDataSize = sizeof(u32) * terrainMeshData.indexNum;
-    cmd->isStreamData = false;
-    cmd->vertexBufHandle = &terrain->terrain_model.vertexBufferHandle;
-    cmd->indexBufHandle = &terrain->terrain_model.indexBufferHandle;
-
-    terrain->terrain_model.elementNum = terrainMeshData.indexNum;
-    terrain->terrain_model.vertexBufferLayout = {
-      terrainMeshData.vertexNum * (u32)sizeof(f32),
-      terrainMeshData.normalNum * (u32)sizeof(f32),
-      terrainMeshData.texCoordNum * (u32)sizeof(f32),
-      terrainMeshData.colorNum * (u32)sizeof(f32)};
-  }
-
-  {  // Terrain model pipeline init
-    shader_data terrainShader =
-        importShader(tempArena, "./assets/shaders/terrain.vs",
-                     "./assets/shaders/terrain.fs");
-
-    renderer_command_create_program_pipeline *cmd = renderer_pushCommand(
-        rendererBuffer, renderer_command_create_program_pipeline);
-
-    cmd->fragmentShaderData = (char *)terrainShader.fsData;
-    cmd->vertexShaderData = (char *)terrainShader.vsData;
-    cmd->vertexUniformEntries = rt_renderer_allocUniformBuffer(tempArena, 8);
-    rt_renderer_pushUniformEntry(&cmd->vertexUniformEntries, mat4,
-                                 "mvp");
-    rt_renderer_pushUniformEntry(&cmd->vertexUniformEntries, vec2,
-                                 "offset");
-    rt_renderer_pushUniformEntry(&cmd->vertexUniformEntries, vec2,
-                                 "gridSize");
-    rt_renderer_pushUniformEntry(&cmd->vertexUniformEntries, vec2,
-                                 "gridCells");
-    rt_renderer_pushUniformEntry(&cmd->vertexUniformEntries, vec3,
-                                 "heightMapScale");
-    rt_renderer_pushUniformEntry(&cmd->vertexUniformEntries, vec3,
-                                 "scaleAndFallOf");
-
-    cmd->vertexSamplerEntries = rt_renderer_allocSamplerBuffer(tempArena, 4);
-    cmd->fragmentSamplerEntries = rt_renderer_allocSamplerBuffer(tempArena, 4);
-    rt_renderer_pushSamplerEntry(&cmd->vertexSamplerEntries, "height_map");
-    rt_renderer_pushSamplerEntry(&cmd->fragmentSamplerEntries, "terrain_tex");
-
-    cmd->layout = {.position = {.format = vertex_format_float3, .layoutIdx = 0},
-                   .normals = {.layoutIdx = -1},
-                   .uv = {.layoutIdx = -1},
-                   .color = {.layoutIdx = -1}};
-    cmd->depthTest = true;
-    cmd->shaderProgramHandle = &terrain->terrain_model.programHandle;
-    cmd->progPipelineHandle = &terrain->terrain_model.pipelineHandle;
-
-    terrain->terrain_model.vsUniformSize = cmd->vertexUniformEntries.bufferSize;
-  }
-  {  // Geometry model pipeline init
     shader_data shader =
         importShader(tempArena, "./assets/shaders/mesh_color.vs",
                      "./assets/shaders/mesh_color.fs");
@@ -457,7 +432,7 @@ static void drawTerrain(memory_arena *tempArena, game_state *state,
                      0};
 
         vec3s normal;
-        f32 depth = getGeometryHeight(pos, state, &normal, false);
+        f32 depth = getGeometryHeight(pos, state, &normal);
         lines[idx] = {pos.x, pos.y, -depth};
         lines[idx + 1] = (vec3s){pos.x, pos.y, -depth} +
                          (vec3s){normal.x, normal.y, normal.z};
@@ -476,7 +451,7 @@ static void drawTerrain(memory_arena *tempArena, game_state *state,
     copyType(vpMat.raw, cmd->mvp, mat4s);
   }
   if (isBitSet(state->deve.drawState, DRAW_TERRAIN_GEOMETRY)) {
-    {  // Geometry
+    {
       {
         renderer_command_apply_program_pipeline *cmd = renderer_pushCommand(
             rendererBuffer, renderer_command_apply_program_pipeline);
@@ -512,7 +487,7 @@ static void drawTerrain(memory_arena *tempArena, game_state *state,
     }
   }
   if (isBitSet(state->deve.drawState, DRAW_TERRAIN)) {
-    {  // Terrain
+    {
       {
         renderer_command_apply_program_pipeline *cmd = renderer_pushCommand(
             rendererBuffer, renderer_command_apply_program_pipeline);
@@ -536,6 +511,7 @@ static void drawTerrain(memory_arena *tempArena, game_state *state,
             state->terrain.terrain_model.terrainSamplerHandle,
             state->terrain.terrain_model.terrainTexHandle);
       }
+      // Setup and draw outer terrain mesh
       {
         renderer_command_apply_uniforms *cmd = renderer_pushCommand(
             rendererBuffer, renderer_command_apply_uniforms);
@@ -562,6 +538,7 @@ static void drawTerrain(memory_arena *tempArena, game_state *state,
         cmd->numElement = state->terrain.terrain_model.elementNum;
         cmd->numInstance = 1;
       }
+      // Setup and draw inner terrain mesh
       {
         renderer_command_apply_uniforms *cmd = renderer_pushCommand(
             rendererBuffer, renderer_command_apply_uniforms);

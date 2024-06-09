@@ -77,7 +77,8 @@ typedef struct hinge_joint {
   // Solver shared
   f32 motorImpulse;
 
-  bool motorEnabled;
+  b32 motorEnabled;
+  b32 breaking;
   f32 motorMaxTorque;
   f32 motorSpeed;
   f32 motorAngle;
@@ -120,7 +121,7 @@ typedef struct rear_axle_motor {
   vec3s mA1;
   vec4s localAxisARotation;
   // Solver shared
-  bool enabled;
+  b32 enabled;
   f32 impulseA;
   f32 impulseB;
   f32 maxTorque;

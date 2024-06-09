@@ -5,13 +5,13 @@ inline shape_box mergeBoxShape(shape_box oldShape, f32 *points,
 
   vec3s max = oldShape.max, min = oldShape.min;
   for (usize i = 0; i < pointNum; i+=3) {
-    min.x = fminf(points[i],   min.x);
-    min.y = fminf(points[i+1], min.y);
-    min.z = fminf(points[i+2], min.z);
+    min.x = MIN(points[i],   min.x);
+    min.y = MIN(points[i+1], min.y);
+    min.z = MIN(points[i+2], min.z);
 
-    max.x = fmaxf(points[i],   max.x);
-    max.y = fmaxf(points[i+1], max.y);
-    max.z = fmaxf(points[i+2], max.z);
+    max.x = MAX(points[i],   max.x);
+    max.y = MAX(points[i+1], max.y);
+    max.z = MAX(points[i+2], max.z);
   }
 
   return {min, max, max - min, (min + max) * 0.5f};

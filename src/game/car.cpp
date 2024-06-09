@@ -2,7 +2,7 @@
 #include "cglm/struct/quat.h"
 #include "cglm/struct/vec3.h"
 #include "collision.h"
-#include "rotten.h"
+#include "car_game.h"
 #include "collision_solver.cpp"
 #include "distance_joint.cpp"
 #include "hinge_joint.cpp"
@@ -103,9 +103,8 @@ inline void deleteCar(renderer_command_buffer* rendererBuffer,
 static void createCar(memory_arena* permanentArena, memory_arena* tempArena,
                       renderer_command_buffer* rendererBuffer,
                       game_state* game) {
-  //////////////////////////////
-  //        MESH INIT        ///
-  //////////////////////////////
+
+  // Model mesh
   game_object* car = &game->car;
   *car = {0};
   cgltf_data* carGlTFData =
@@ -123,10 +122,7 @@ static void createCar(memory_arena* permanentArena, memory_arena* tempArena,
     }
   }
 
-  //////////////////////////////
-  //   SHADER AND PIPELINE   ///
-  //////////////////////////////
-
+  // Shader & Pipelines
   shader_data carShader = importShader(tempArena, "./assets/shaders/car.vs",
                                        "./assets/shaders/car.fs");
   {
@@ -160,7 +156,7 @@ static void createCar(memory_arena* permanentArena, memory_arena* tempArena,
     cmd->depthTest = true;
   }
 
-  // chassis rigid body
+  // Car chassis body setup
   shape* chassisShape = &car->bodyShapes[0];
   chassisShape->type = shape_type::SHAPE_BOX;
   shape_box box =
@@ -175,17 +171,17 @@ static void createCar(memory_arena* permanentArena, memory_arena* tempArena,
   vec3s size = box.size;
   f32 density = 300.0f;
   f32 mass = density * (size.x * size.y * size.z);
-  printf("car mass %f\n", mass);
+  vec3s _notUsed;
   car->body.chassis.id = 0;
   car->body.chassis.localCenter = (vec3s){0.5f, 0.0f, -0.5f};
-  car->body.chassis.position.z = 1.f;
-  // car->body.chassis.Orientation = GLMS_MAT3_IDENTITY;
+  car->body.chassis.position.z = -getGeometryHeight(
+						   (vec3s){0.0f,0.0f,0.0f},
+						   game, &_notUsed);
   car->body.chassis.mass = mass;
   car->body.chassis.invMass = 1.0f / mass;
   car->body.chassis.invBodyInertiaTensor = GLMS_MAT3_IDENTITY;
-  // Inertia tensor
+
   f32 bodyNumerator = 1.f / 12.f;
-  // Solid cuboid inertia tensor
   car->body.chassis.invBodyInertiaTensor.m00 =
       bodyNumerator / mass * (size.y * size.y + size.z * size.z);
   car->body.chassis.invBodyInertiaTensor.m11 =
@@ -201,7 +197,7 @@ static void createCar(memory_arena* permanentArena, memory_arena* tempArena,
       car->body.chassis.orientation * car->body.chassis.invBodyInertiaTensor *
       glms_mat3_transpose(car->body.chassis.orientation);
 
-  // wheel rigid bodies
+  // Car wheels body setup
   for (u32 i = 0; i < WHEEL_NUM; i++) {
     f32 radius = 0.3f;
     shape* sphere = &car->bodyShapes[car->body.chassis.shapeNum + i];
@@ -209,16 +205,15 @@ static void createCar(memory_arena* permanentArena, memory_arena* tempArena,
     sphere->sphere.radius = radius;
     f32 mass = density * 0.75f *
                (4.f / 3.f * 3.1415926535f * (radius * radius * radius));
-    printf("wheel mass %f\n", mass);
     vec3s offset = (vec3s){0.f, 0.f, -0.15f} - car->body.chassis.localCenter;
     vec3s pivot = *car->wheel_transforms.t[i] * offset;
     car->body.wheels[i].position =
         pivot + car->body.chassis.position + car->body.chassis.localCenter;
     car->body.wheels[i].id = 1 + i;
-    // car->body.chassis.Orientation = GLMS_MAT3_IDENTITY;wheels[i]
     f32 wheelNumerator = 1.f / 4.f;
     car->body.wheels[i].mass = mass;
     car->body.wheels[i].invMass = 1.0f / mass;
+
     car->body.wheels[i].invBodyInertiaTensor.m00 =
         wheelNumerator / (mass * (radius * radius));
     car->body.wheels[i].invBodyInertiaTensor.m11 =
@@ -227,7 +222,6 @@ static void createCar(memory_arena* permanentArena, memory_arena* tempArena,
         wheelNumerator / (mass * (radius * radius));
     car->body.wheels[i].orientation = GLMS_MAT3_IDENTITY_INIT;
     car->body.wheels[i].orientationQuat = GLMS_QUAT_IDENTITY_INIT;
-    // Coefficient of restitution
     car->body.wheels[i].angularVelocity = {0.f, 0.f, 0.f};
 
     car->body.wheels[i].invWorlInertiaTensor =
@@ -263,8 +257,6 @@ static void drawCar(game_state* game, memory_arena* tempArena,
 		    mat4s view, mat4s proj) {
   car_object* car = &game->car;
   mat4s modelMat = car->body_model.transform;
-
-  // platformApi->rendererSetPipeline(car->body_model.pipelineHandle);
 
   // Max eight levels deep nested children, should be enough.
   if (isBitSet(game->deve.drawState, DRAW_CAR)) {
@@ -306,7 +298,6 @@ static void drawCar(game_state* game, memory_arena* tempArena,
         }
       }
 
-      // m = proj * view * m;
       if (car->body_model.meshData[meshIdx].elementNum > 0) {
         {
           renderer_command_apply_bindings* cmd = renderer_pushCommand(
@@ -409,8 +400,11 @@ static void simulateCar(game_state* game, input_state* input, f32 delta) {
       0.15f *
       (fabsf(axis.x) > 0.1f ? LERP(0.25, 1.0, 1.0f - speed / 35.f) : 1.f);
 
-  car->wheelHinge[0].motorEnabled = axis.y > 0.4f;
-  car->wheelHinge[1].motorEnabled = axis.y > 0.4f;
+  car->wheelHinge[0].motorEnabled = fabsf(axis.y) > 0.4f;
+  car->wheelHinge[1].motorEnabled = fabsf(axis.y) > 0.4f;
+
+  car->wheelHinge[0].breaking = axis.y < 0.4f;
+  car->wheelHinge[1].breaking = axis.y < 0.4f;
 
   car->turnAngle = LERP(car->turnAngle, 0.35f * axis.x, turnRate);
 
@@ -426,16 +420,17 @@ static void simulateCar(game_state* game, input_state* input, f32 delta) {
   f32 targetTime = stepDelta;
 
   if (input->reset == BUTTON_RELEASED) {
+    vec3s _notUsed;
     car->body.chassis.position.x = 0;
     car->body.chassis.position.y = 0;
-    car->body.chassis.position.z = 10;
-    // car->body.chassis.velocity.y = 20;
+    car->body.chassis.position.z =
+        -getGeometryHeight((vec3s){0.0f, 0.0f, 0.0f}, game, &_notUsed);
+    car->body.chassis.velocity = (vec3s){0.0f,0.0f,0.0f};
+    car->body.chassis.angularVelocity = (vec3s){0.0f,0.f,0.f};
     car->body.chassis.orientation = GLMS_MAT3_IDENTITY_INIT;
     car->body.chassis.orientationQuat = {0.0, 0.0, 0.0, 1.0};
-    // car->body.chassis.angularVelocity = (vec3s){0.0f,1.f,-1.f};
 
     for (i32 i = 0; i < WHEEL_NUM; i++) {
-      // car->joints[i].localOriginAnchorA.z = -1.25f;
       car->body.wheels[i].position = car->body.chassis.position +
                                      car->wheelSuspension[i].localOriginAnchorA;
       *car->wheel_transforms.t[i] =
@@ -452,7 +447,6 @@ static void simulateCar(game_state* game, input_state* input, f32 delta) {
   // TODO: CCD
   while (currentTime < stepDelta) {
     // Calculate forces
-    // f32 itDelta = (targetTime - currentTime);
     f32 itDelta = targetTime - currentTime;
 
     // Body contacts
@@ -467,10 +461,10 @@ static void simulateCar(game_state* game, input_state* input, f32 delta) {
         if (bShape->type == shape_type::SHAPE_POINT) {
           u = (body->orientation * (bShape->point.p - body->localCenter));
           vec3s worldU = u + body->position;
-          depth = getGeometryHeight(worldU, game, &normal, false);
+          depth = getGeometryHeight(worldU, game, &normal);
         } else if (bShape->type == shape_type::SHAPE_SPHERE) {
           depth = getGeometryHeight(body->position + body->localCenter, game,
-                                    &normal, body->id == 2);
+                                    &normal);
           depth = depth - bShape->sphere.radius;
           u = normal * (depth - bShape->sphere.radius);
         }
@@ -534,7 +528,7 @@ static void simulateCar(game_state* game, input_state* input, f32 delta) {
 
     for (int i = 0; i < WHEEL_NUM; ++i) {
       // Slip ratio
-      bool warmStart = true;
+      b32 warmStart = true;
       distance_joint* hj = car->wheelSuspension + i;
       preSolveDistanceJoint(hj, h, warmStart);
       hinge_joint* dj = car->wheelHinge + i;

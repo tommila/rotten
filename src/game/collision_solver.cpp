@@ -159,7 +159,7 @@ static void warmStart(contact_constraint* constraints,
 static void solve(contact_constraint* constraints,
 			  u32 constraintNum,
 			  float invH,
-			  bool useBias)
+			  b32 useBias)
 {
   for (u32 i = 0; i < constraintNum; ++i) {
     contact_constraint* constraint = constraints + i;

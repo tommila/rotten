@@ -5,46 +5,64 @@ layout(location = 0) in vec4 position;
 uniform mat4 mvp;
 uniform vec2 offset;
 
-uniform vec2 gridSize;
-uniform vec2 gridCells;
-
-uniform vec3 heightMapScale;
-uniform vec3 scaleAndFallOf;
-
 uniform sampler2D height_map;
 
-out vec3 color;
 out vec2 uv;
-out float fog_distance;
+out float height;
+out vec3 diffuse;
 
-const vec3 light_dir = vec3(0.0, 0.f, 1.0f);
+const vec2 cell_num = vec2(100.f,100.f);
+
+const vec2 plane_size = vec2(512.f, 512.f);
+const vec2 world_size = vec2(1.f, 1.f);
+const vec2 cell_size = plane_size / cell_num;
+
+const vec3 light_dir = vec3(-1.f,1.0f,0.5f);
+
+vec3 texNormalMap(in vec2 tex_uv) {
+
+
+  vec2 s = 1.0 / vec2(100.f, 100.f);
+
+  vec3 height;
+  vec3 normal;
+
+  height.x = texture(height_map, tex_uv).x;
+  height.y = texture(height_map, tex_uv + vec2(s.x, 0.0)).x;
+  height.z = texture(height_map, tex_uv + vec2(0.0, s.y)).x;
+
+  normal.xy = (height.x - height.yz);
+
+  // float x = (height.x - height.y);
+  // normal.y = (height.x - height.z);
+  // normal.x = x;
+  normal.xy /= s;
+
+  normal.z = 10.f;
+
+  normal = normalize(normal);
+  normal = normal * 0.5 + 0.5;
+
+  return normal;
+}
 
 void main() {
-  float scale = scaleAndFallOf.x;
+  vec4 pos = position;
+  vec2 int_part;
 
-  vec4 pos = vec4(position.xy * scale, position.z, position.w);
-
-  vec2 cellSize = gridSize / gridCells;
-  vec2 pos_offset = mod(offset.xy, cellSize * scale);
-  fog_distance = length(pos.xy - pos_offset);
   // Offsetting vertex positions with uv will prevent terrain malformations.
-  float distanceFromCenter = length(pos.xy);
-  pos.xy += offset.xy;
-  pos.xy -= pos_offset;
-
-  vec2 heightMapSize = gridSize * heightMapScale.xy;
-  vec2 uvOffset = cellSize * 0.5f / heightMapSize + vec2(0.5f,0.5f);
-  uv = (pos.xy / heightMapSize) + uvOffset;
+  pos.xy += offset + plane_size.xy * 0.5f;
+  pos.xy -= mod(offset, cell_size);
+  uv = (position.xy / plane_size / world_size) + floor(offset / cell_size) * cell_size / plane_size / world_size;
   vec4 tex = texture(height_map, uv);
   vec3 normal = tex.gba;
-  float height = tex.x;
-  vec3 l = normalize(light_dir);
-  float d = max(dot(normal, l), 0.0);
-  color = vec3(1.0, 1.0, 1.0) * d;
-  pos.z = height * heightMapScale.z - heightMapScale.z;
+  height = tex.x;
 
-  pos.z -= mix(0.f, 1.0f * heightMapScale.z, max(0.0f, distanceFromCenter / (heightMapSize.x * scale) - scaleAndFallOf.y));
-  pos.z -= mix(0.f, 1.0f * heightMapScale.z, max(0.0f, 1.0f - distanceFromCenter / (heightMapSize.x * scale) - scaleAndFallOf.z));
+  pos.z = height * 20.f;
+
+  vec3 l = normalize(light_dir);
+  float diff = max(dot(normal, l), 0.0);
+  diffuse = vec3(1.0,1.0,1.0) * diff;
 
   gl_Position = mvp * pos;
 }

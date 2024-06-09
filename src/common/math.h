@@ -276,3 +276,9 @@ inline mat4s glms_mat3_make_mat4(mat3s m3) {
   m4 = glms_mat4_ins3(m3, m4);
   return m4;
 }
+
+inline vec3s calcNormal(vec3s A, vec3s B, vec3s C) {
+  vec3s AB = B - A;
+  vec3s AC = C - A;
+  return glms_vec3_normalize(glms_vec3_cross(AB, AC));
+};

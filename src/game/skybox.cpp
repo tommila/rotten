@@ -1,4 +1,4 @@
-#include "rotten.h"
+#include "car_game.h"
 
 static void deleteSkybox(renderer_command_buffer *rendererBuffer,
                          game_state *game) {

@@ -157,13 +157,22 @@ inline void solveHingeJoint(hinge_joint* joint, f32 h, f32 invH,
     vec3s wA = bodyA->angularVelocity;
     vec3s wB = bodyB->angularVelocity;
 
-    f32 Cdot = glms_vec3_dot(wB - wA, joint->mA1) - joint->motorSpeed;
+    f32 Cdot = glms_vec3_dot(wB - wA, joint->mA1);
+    if (joint->breaking) {
+      f32 longitudinalSpeed = glms_vec3_dot(GLMS_XUP * bodyA->orientation, bodyB->velocity);
+      if (SIGNF(longitudinalSpeed) < 0.f) {
+	Cdot = joint->motorSpeed - Cdot;
+      }
+    }
+    else {
+      Cdot -= joint->motorSpeed;
+    }
     // Kmotor = Kmin = a^T * I1⁻¹a + a^T * I2⁻¹
     f32 K = glms_vec3_dot(joint->mA1, joint->mA1 * joint->bodyA->invWorlInertiaTensor) +
       glms_vec3_dot(joint->mA1, joint->mA1 * joint->bodyB->invWorlInertiaTensor);
     f32 lambda = -K * Cdot;
 
-    f32 maxImpulse = h * joint->motorMaxTorque;
+    f32 maxImpulse = fabsf(h * joint->motorMaxTorque);
     joint->motorImpulse =
         CLAMP(joint->motorImpulse + lambda, -maxImpulse, maxImpulse);
 

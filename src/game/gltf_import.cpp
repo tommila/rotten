@@ -1,5 +1,5 @@
 #include <cstring>
-#include "rotten.h"
+#include "car_game.h"
 #define CGLTF_IMPLEMENTATION
 
 #include "../ext/cgltf.h"
