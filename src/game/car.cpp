@@ -1,5 +1,7 @@
 #include "all.h"
 
+// TODO: Pull out collision testing/solving code
+
 #define WHEEL_NUM 4
 #define RIGID_BODY_NUM 1 + WHEEL_NUM
 
@@ -38,6 +40,8 @@ static read_gltf_node_result readGltfNodeData(memory_arena* tempArena,
 
   for (cgltf_size childIndex = 0; childIndex < node->children_count;
        ++childIndex) {
+
+    // Clean this up
     read_gltf_node_result childResult =
         readGltfNodeData(tempArena,
 			 meshData + result.meshNum,
@@ -150,9 +154,9 @@ static void carCreateModel(memory_arena* permanentArena, memory_arena* tempArena
     car->wheelModel[2].meshNum = 0;
     car->wheelModel[3].meshNum = 0;
 
+    // scene->nodes_count is the amount that root node has, not the total
     for (cgltf_size nodeIndex = 0; nodeIndex < gltfData->nodes_count;
          nodeIndex++) {
-      // scene->nodes_count is the amount that root node has, not the total
       cgltf_node* node = gltfData->nodes + nodeIndex;
       if (strcmp(node->name, "Hull") == 0) {
         createModelData(tempArena, rendererBuffer, &car->chassisModel, node);
@@ -167,7 +171,8 @@ static void carCreateModel(memory_arena* permanentArena, memory_arena* tempArena
       }
     }
   }
-  // Shader & Pipelines
+
+  // Shaders
   utime vsShaderModTime =
       platformApi->diskIOReadModTime("./assets/shaders/car.vs");
   utime fsShaderModTime =
@@ -828,7 +833,7 @@ static void carInit(game_state* game,
   }
 }
 
-static void carUpdateAndRender(game_state* game,
+static void renderAndUpdateCar(game_state* game,
 			       memory_arena* tempArena,
 			       rt_render_entry_buffer* rendererBuffer,
 			       mat4s view, mat4s proj, f32 delta) {

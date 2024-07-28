@@ -1,8 +1,3 @@
-// Solver adapted from Erin Catto Solver2d library
-
-// SPDX-FileCopyrightText: 2024 Erin Catto
-// SPDX-License-Identifier: MIT
-
 // Constraint derivations from
 // Constraints Derivation for Rigid Body Simulation in 3D by Daniel Chappuis
 

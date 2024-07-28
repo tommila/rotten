@@ -297,7 +297,7 @@ static void terrainCreateModel(game_state *state,
   }
 }
 
-static void terrainRender(game_state *state, memory_arena *tempArena,
+static void renderTerrain(game_state *state, memory_arena *tempArena,
 			  rt_render_entry_buffer *rendererBuffer,
 			  mat4s view, mat4s proj) {
   if (isBitSet(state->deve.drawState, DRAW_TERRAIN)) {

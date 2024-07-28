@@ -1,5 +1,7 @@
 #include "all.h"
 
+// TODO: Create skybox by hand, no need to load it from cgltf
+
 static void skyboxCreateModel(game_state *state, memory_arena *permanentArena,
                               memory_arena *tempArena,
                               rt_render_entry_buffer *rendererBuffer,
@@ -104,7 +106,7 @@ static void skyboxCreateModel(game_state *state, memory_arena *permanentArena,
   }
 }
 
-static void skyboxRender(game_state* game, memory_arena *tempArena,
+static void renderSkybox(game_state* game, memory_arena *tempArena,
                        rt_render_entry_buffer *rendererBuffer, mat4s view,
                        mat4s proj) {
   skybox_object *skybox = &game->skybox;
