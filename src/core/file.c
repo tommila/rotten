@@ -3,9 +3,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-time_t fileReadModTime(const char* filePath) {
+utime readFileModTime(const char* filePath) {
   struct stat sb;
-  int ret = stat(filePath, &sb);
+  i32 ret = stat(filePath, &sb);
   if (ret == 0) {
     return sb.st_mtime;
   }

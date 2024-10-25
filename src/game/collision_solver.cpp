@@ -21,8 +21,8 @@ typedef struct contact_constraint {
   rigid_body* bodyA;
   rigid_body* bodyB;
   contact_constraint_point ccp;
-  vec3s normal;
-  vec3s tangents[2];
+  v3 normal;
+  v3 tangents[2];
   f32 friction;
 } contact_constraint;
 
@@ -46,37 +46,37 @@ static void preSolve(contact_manifold* man,
   constraint->friction = sqrtf(man->bodyA->friction + man->bodyB->friction);
 
   f32 mA = constraint->bodyA->invMass;
-  mat3s iA = constraint->bodyA->invWorlInertiaTensor;
+  m3x3 iA = constraint->bodyA->invWorlInertiaTensor;
   f32 mB = constraint->bodyB->invMass;
-  mat3s iB = constraint->bodyB->invWorlInertiaTensor;
+  m3x3 iB = constraint->bodyB->invWorlInertiaTensor;
 
   contact_constraint_point* ccp = &constraint->ccp;
   ccp->point = man->point;
-  vec3s rA = ccp->point.localPointA;
-  vec3s rB = ccp->point.localPointB;
+  v3 rA = ccp->point.localPointA;
+  v3 rB = ccp->point.localPointB;
 
-  vec3s normal = constraint->normal;
+  v3 normal = constraint->normal;
 
-  ccp->adjustedSeparation = ccp->point.separation - glms_vec3_dot((rB - rA), normal);
+  ccp->adjustedSeparation = ccp->point.separation - v3_dot((rB - rA), normal);
 
-  vec3s rnA = glms_vec3_cross(rA, normal);
-  vec3s rnB = glms_vec3_cross(rB, normal);
+  v3 rnA = v3_cross(rA, normal);
+  v3 rnB = v3_cross(rB, normal);
   f32 nm = mA + mB;
   f32 tm[2] = {nm, nm};
   f32 kNormal =
-      nm + glms_vec3_dot(rnA, iA * rnA) + glms_vec3_dot(rnB, iB * rnB);
+      nm + v3_dot(rnA, iA * rnA) + v3_dot(rnB, iB * rnB);
   ccp->normalMass = 1.0f / kNormal;
 
   for (u32 i = 0; i < 2; i++) {
-    vec3s rtA = glms_vec3_cross(constraint->tangents[i], rA);
-    vec3s rtB = glms_vec3_cross(constraint->tangents[i], rB);
-    tm[i] += glms_vec3_dot(rtA, iA * rtA) + glms_vec3_dot(rtB, iB * rtB);
+    v3 rtA = v3_cross(constraint->tangents[i], rA);
+    v3 rtB = v3_cross(constraint->tangents[i], rB);
+    tm[i] += v3_dot(rtA, iA * rtA) + v3_dot(rtB, iB * rtB);
     ccp->tangentMass[i] = tm[i] > 0.0f ? 1.0f / tm[i] : 0.0f;
   }
 
   // soft contact
-  f32 zeta = 1.0f;                       // damping ratio
-  f32 herz = 60.f;                       // cycler per second
+  f32 zeta = 0.7f;                       // damping ratio
+  f32 herz = 30.f;                       // cycler per second
   f32 omega = 2.f * PI * herz;           // angular frequency
   f32 shared = 2.0f * zeta + h * omega;  // shared expression
   float c = h * omega * shared;
@@ -88,34 +88,34 @@ static void preSolve(contact_manifold* man,
 static void warmStart(contact_constraint* constraint, u32 constraintNum) {
   contact_constraint_point* cp = &constraint->ccp;
 
-  vec3s normal = constraint->normal;
-  vec3s P = (cp->point.normalImpulse * normal);
+  v3 normal = constraint->normal;
+  v3 P = (cp->point.normalImpulse * normal);
 
   float mA = constraint->bodyA->invMass;
-  mat3s iA = constraint->bodyA->invWorlInertiaTensor;
+  m3x3 iA = constraint->bodyA->invWorlInertiaTensor;
 
-  vec3s vA = constraint->bodyA->velocity;
-  vec3s wA = constraint->bodyA->angularVelocity;
+  v3 vA = constraint->bodyA->velocity;
+  v3 wA = constraint->bodyA->angularVelocity;
 
-  vec3s rA = cp->point.localPointA;
+  v3 rA = cp->point.localPointA;
 
   float mB = constraint->bodyB->invMass;
-  mat3s iB = constraint->bodyB->invWorlInertiaTensor;
+  m3x3 iB = constraint->bodyB->invWorlInertiaTensor;
 
-  vec3s vB = constraint->bodyB->velocity;
-  vec3s wB = constraint->bodyB->angularVelocity;
+  v3 vB = constraint->bodyB->velocity;
+  v3 wB = constraint->bodyB->angularVelocity;
 
-  vec3s rB = cp->point.localPointB;
+  v3 rB = cp->point.localPointB;
 
   for (u32 i = 0; i < 2; i++) {
     P = P + constraint->tangents[i] * cp->point.tangentImpulse[i];
   }
 
   vA = vA - mA * P;
-  wA = wA - iA * glms_vec3_cross(rA, P);
+  wA = wA - iA * v3_cross(rA, P);
 
   vB = vB + mB * P;
-  wB = wB + iB * glms_vec3_cross(rB, P);
+  wB = wB + iB * v3_cross(rB, P);
 
   constraint->bodyA->velocity = vA;
   constraint->bodyA->angularVelocity = wA;
@@ -128,38 +128,38 @@ static void solve(contact_constraint* constraint, u32 constraintNum, float invH,
   contact_constraint_point* cp = &constraint->ccp;
 
   float mA = constraint->bodyA->invMass;
-  mat3s iA = constraint->bodyA->invWorlInertiaTensor;
+  m3x3 iA = constraint->bodyA->invWorlInertiaTensor;
 
-  vec3s vA = constraint->bodyA->velocity;
-  vec3s wA = constraint->bodyA->angularVelocity;
+  v3 vA = constraint->bodyA->velocity;
+  v3 wA = constraint->bodyA->angularVelocity;
 
-  vec3s dcA = constraint->bodyA->deltaPosition;
+  v3 dcA = constraint->bodyA->deltaPosition;
 
   float mB = constraint->bodyB->invMass;
-  mat3s iB = constraint->bodyB->invWorlInertiaTensor;
+  m3x3 iB = constraint->bodyB->invWorlInertiaTensor;
 
-  vec3s vB = constraint->bodyB->velocity;
-  vec3s wB = constraint->bodyB->angularVelocity;
+  v3 vB = constraint->bodyB->velocity;
+  v3 wB = constraint->bodyB->angularVelocity;
 
-  vec3s dcB = constraint->bodyB->deltaPosition;
+  v3 dcB = constraint->bodyB->deltaPosition;
 
-  vec3s normal = constraint->normal;
+  v3 normal = constraint->normal;
 
   float friction = constraint->friction;
 
   // compute current separation
-  vec3s rA = cp->point.localPointA;
-  vec3s rB = cp->point.localPointB;
+  v3 rA = cp->point.localPointA;
+  v3 rB = cp->point.localPointB;
 
   // Relative velocity at contact
-  vec3s vrA = glms_vec3_cross(wA, rA);
-  vec3s vrB = glms_vec3_cross(wB, rB);
+  v3 vrA = v3_cross(wA, rA);
+  v3 vrB = v3_cross(wB, rB);
 
-  vec3s dv = (vB + vrB) - (vA + vrA);
+  v3 dv = (vB + vrB) - (vA + vrA);
   // Normal
   {
-    vec3s ds = (dcB - dcA) + (rB - rA);
-    f32 separation = glms_vec3_dot(ds, normal) + cp->adjustedSeparation;
+    v3 ds = (dcB - dcA) + (rB - rA);
+    f32 separation = v3_dot(ds, normal) + cp->adjustedSeparation;
 
     f32 bias = 0.0f;
     f32 massScale = 1.0f;
@@ -174,7 +174,7 @@ static void solve(contact_constraint* constraint, u32 constraintNum, float invH,
       impulseScale = cp->impulseCoefficient;
     }
 
-    f32 vn = glms_vec3_dot(dv, normal);
+    f32 vn = v3_dot(dv, normal);
 
     // Compute normal impulse
     f32 impulse = -cp->normalMass * massScale * (vn + bias) -
@@ -185,11 +185,11 @@ static void solve(contact_constraint* constraint, u32 constraintNum, float invH,
     cp->point.normalImpulse = newImpulse;
 
     // Apply contact impulse
-    vec3s P = impulse * normal;
+    v3 P = impulse * normal;
     vA = vA - mA * P;
-    wA = wA - iA * glms_vec3_cross(rA, P);
+    wA = wA - iA * v3_cross(rA, P);
     vB = vB + mB * P;
-    wB = wB + iB * glms_vec3_cross(rB, P);
+    wB = wB + iB * v3_cross(rB, P);
   }
 
   // Friction
@@ -198,7 +198,7 @@ static void solve(contact_constraint* constraint, u32 constraintNum, float invH,
     for (u32 i = 0; i < 2; ++i) {
       // Compute tangent force
       f32 lambda =
-          -glms_vec3_dot(dv, constraint->tangents[i]) * cp->tangentMass[i];
+          -v3_dot(dv, constraint->tangents[i]) * cp->tangentMass[i];
 
       // Clamp the accumulated force
       f32 maxFriction = friction * cp->point.normalImpulse;
@@ -208,12 +208,12 @@ static void solve(contact_constraint* constraint, u32 constraintNum, float invH,
       lambda = cp->point.tangentImpulse[i] - oldLambda;
 
       // Apply contact impulse
-      vec3s impulse = constraint->tangents[i] * lambda;
+      v3 impulse = constraint->tangents[i] * lambda;
 
       vA = vA - mA * impulse;
-      wA = wA - iA * glms_vec3_cross(rA, impulse);
+      wA = wA - iA * v3_cross(rA, impulse);
       vB = vB + mB * impulse;
-      wB = wB + iB * glms_vec3_cross(rB, impulse);
+      wB = wB + iB * v3_cross(rB, impulse);
     }
   }
 
@@ -225,22 +225,23 @@ static void solve(contact_constraint* constraint, u32 constraintNum, float invH,
 
 static void integrateVelocities(float h,
 				rigid_body* body,
-				vec3s extForces,
-				vec3s extTorques) {
+				v3 extForces,
+				v3 extTorques) {
   // Integrate velocities
-  vec3s cmForce = -Kdl * body->velocity * glms_vec3_norm(body->velocity)
-    + Gravity * body->mass
+  v3 cmForce = - (Kdl * body->velocity * v3_normalize(body->velocity))
+    - (Krr * body->velocity)
+    + (Gravity * body->mass)
     + extForces;
   // Dampings
-  vec3s torque = -Kda * body->angularVelocity + extTorques;
+  v3 torque = -Kda * body->angularVelocity + extTorques;
 
   // vCM = vCM + h * (FT/M)
-  vec3s acc = body->invMass * cmForce;
+  v3 acc = body->invMass * cmForce;
   body->velocity = body->velocity + acc * h;
   // ICM-1 = A * _I-1 * AT
   body->invWorlInertiaTensor = body->orientation *
                                    body->invBodyInertiaTensor *
-                                   glms_mat3_transpose(body->orientation);
+                                   m3x3_transpose(body->orientation);
 
   body->angularVelocity = body->angularVelocity + body->invWorlInertiaTensor * torque * h;
 }
@@ -248,15 +249,16 @@ static void integrateVelocities(float h,
 static void integratePositions(float h,
 			       rigid_body* body) {
   body->deltaPosition = body->deltaPosition + body->velocity * h;
-  quat q = {body->angularVelocity.x * h * 0.5f,
+  quat q = {0.0f,
+            body->angularVelocity.x * h * 0.5f,
             body->angularVelocity.y * h * 0.5f,
-            body->angularVelocity.z * h * 0.5f, 0.0f};
-
+            body->angularVelocity.z * h * 0.5f};
   body->orientationQuat =
-      glms_quat_add(body->orientationQuat, q * body->orientationQuat);
-  body->orientationQuat = glms_quat_normalize(body->orientationQuat);
-
-  body->orientation = glms_quat_mat3(body->orientationQuat);
+      body->orientationQuat + q * body->orientationQuat;
+  body->orientationQuat = quat_normalize(body->orientationQuat);
+  //mat3s o = glms_quat_mat3(body->orientationQuat);
+  //copyType(o.raw, body->orientation.arr, m3x3);
+  body->orientation = m3x3_from_quat(body->orientationQuat);
 }
 
 static void storeContactImpulse(contact_point* point,
@@ -266,10 +268,10 @@ static void storeContactImpulse(contact_point* point,
 }
 
 static void finalizePositions(rigid_body* body, f32 h) {
-  vec3s a = (body->velocity0 - body->velocity) / h;
+  v3 a = (body->velocity0 - body->velocity) / h;
   body->acceleration = a;
 
   body->position = body->position + body->deltaPosition;
-  body->deltaPosition = GLMS_VEC3_ZERO;
+  body->deltaPosition = V3_ZERO;
   body->velocity0 = body->velocity;
 }

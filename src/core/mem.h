@@ -1,8 +1,31 @@
+#include <string.h>
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#if  defined(__SANITIZE_ADDRESS__)
+void __asan_poison_memory_region(void const volatile *addr, size_t size);
+void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
+#define ASAN_POISON_MEMORY_REGION(addr, size) \
+  __asan_poison_memory_region((addr), (size))
+#define ASAN_UNPOISON_MEMORY_REGION(addr, size) \
+  __asan_unpoison_memory_region((addr), (size))
+#else
+#define ASAN_POISON_MEMORY_REGION(addr, size) \
+  ((void)(addr), (void)(size))
+#define ASAN_UNPOISON_MEMORY_REGION(addr, size) \
+  ((void)(addr), (void)(size))
+#endif
+
+#ifdef __cplusplus
+}
+#endif
+
 #ifndef DEFAULT_ALIGNMENT
 #define DEFAULT_ALIGNMENT (2 * sizeof(void*))
 #endif
 
-static uptr alignForward(uptr ptr, usize align) {
+static inline uptr alignForward(uptr ptr, usize align) {
   uptr p, a, modulo;
 
   p = ptr;
@@ -22,20 +45,17 @@ typedef struct memory_arena {
   void* buffer;
   usize head;
   usize size;
+  usize remaining;
 } memory_arena;
 
 void* memArena_alloc(memory_arena* arena, usize size);
+void* memArena_calloc(memory_arena* arena, usize membNum, usize size);
+void* memArena_realloc(memory_arena* arena, void* ptr, usize size);
 void* memArena_allocUnalign(memory_arena* arena, usize size);
 
 void memArena_free(memory_arena* arena, void* p);
 void memArena_clear(memory_arena* arena);
 void memArena_init(memory_arena* arena, void* ptr, usize size);
-
-void mem_init(void* ptr, usize size);
-void mem_free(void* ptr);
-void* mem_malloc(usize size);
-void* mem_calloc(usize num, usize len);
-void* mem_realloc(void* ptr, usize new_size);
 
 typedef struct mem_free_list {
   void* buffer;
@@ -50,12 +70,4 @@ void memFreeList_free(mem_free_list* list, void* ptr);
 void* memFreeList_malloc(mem_free_list* list, usize size);
 void* memFreeList_realloc(mem_free_list* list, void* ptr, usize size);
 
-#define pushArray(memory, count, type) \
-  (type *)arenaAlloc(memory, (count) * sizeof(type))
-#define pushSize(memory, size) \
-  arenaAlloc(memory, size)
-#define pushType(memory, type) (type *)arenaAlloc(memory, sizeof(type))
-inline void *arenaAlloc(memory_arena *mem, u32 size) {
-  void *it = memArena_alloc(mem, size);
-  return it;
-}
+

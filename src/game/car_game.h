@@ -1,16 +1,9 @@
-#define arrayLen(arr) sizeof(arr) / sizeof(arr[0])
+#include "all.h"
 
-#define GLM_VEC4_TO_IVEC4(src) \
-  { (int)src[0], (int)src[1], (int)src[2], (int)src[3] }
-
-#define GLM_IVEC4_TO_VEC4(src) \
-  { (f32)src[0], (f32)src[1], (f32)src[2], (f32)src[3] }
-
-#define GLM_RGBA_SETP(r, g, b, a, dest) GLM_VEC4_SETP(r, g, b, a, dest)
-
-#define SIGNF(a) (a < 0.0f ? -1.0f : 1.0f)
+#define VERSION "v0.0.2"
 
 static loggerPtr LOG;
+
 #define ASSERT(cond) ASSERT_(cond, #cond, __FUNCTION__, __LINE__, __FILE__)
 static assertPtr ASSERT_;
 
@@ -20,23 +13,17 @@ static void (*FREE)(void *p);
 
 struct memory_arena;
 
-#define loadFile(arena, path, binary, data, fileSize) {		    \
-    *fileSize = platformApi->diskIOReadFileSize(path, binary);	    \
-    data = memArena_alloc(arena, *fileSize + 1);		    \
-    platformApi->diskIOReadFileTo(path, *fileSize, true, data);	    \
-  }
-
 #define copyType(from, to, type) memcpy(to, from, sizeof(type))
 
 #define setButtonState(b) b ? \
-  BUTTON_PRESSED : BUTTON_RELEASED
+  button_state_pressed : button_state_released
 
-typedef enum button_state {
-  BUTTON_UP = 0,
-  BUTTON_RELEASED = 1,
-  BUTTON_PRESSED = 2,
-  BUTTON_HELD = 3
-} button_state;
+enum button_state {
+  button_state_up = 0,
+  button_state_released = 1,
+  button_state_pressed = 2,
+  button_state_held = 3
+};
 
 typedef struct mouse_state {
   button_state button[3];
@@ -52,10 +39,6 @@ typedef struct input_state {
       button_state moveDown;
       button_state moveLeft;
       button_state moveRight;
-      button_state camMoveUp;
-      button_state camMoveDown;
-      button_state camMoveLeft;
-      button_state camMoveRight;
       button_state reset;
       button_state quit;
     };
@@ -67,9 +50,7 @@ typedef struct input_state {
 
 // Camera
 typedef struct camera_state {
-  vec3s position;
-  vec3s front;
-  vec3s right;
+  v3 position;
   f32 yaw;
   f32 pitch;
   u32 fov;
@@ -89,7 +70,7 @@ typedef struct mesh_data {
 
 typedef struct mesh_material_data {
   char imagePath[64];
-  f32 baseColor[4];
+  v4 baseColor;
 } mesh_material_data;
 
 typedef struct index_data {
@@ -100,65 +81,106 @@ typedef struct index_data {
 } index_data;
 
 typedef struct model_material_data {
-  image_handle textureHandle;
-  sampler_handle samplerHandle;
-  vec4s baseColorValue;
+  rt_image_handle textureHandle;
+  rt_sampler_handle samplerHandle;
+  v4 baseColorValue;
 } mode_material_data;
 
 typedef struct terrain_object {
   struct {
-    vertex_array_handle vertexArrayHandle;
-    vertex_buffer_handle vertexBufferHandle;
-    index_buffer_handle indexBufferHandle;
-    image_handle terrainTexHandle;
-    image_handle heightMapTexHandle;
-    sampler_handle terrainSamplerHandle;
-    sampler_handle heightMapSamplerHandle;
-    shader_program_handle programHandle;
+    rt_vertex_array_handle vertexArrayHandle;
+    rt_vertex_buffer_handle vertexBufferHandle;
+    rt_index_buffer_handle indexBufferHandle;
+    rt_image_handle terrainTexHandle;
+    rt_image_handle heightMapTexHandle;
+    rt_sampler_handle terrainSamplerHandle;
+    rt_sampler_handle heightMapSamplerHandle;
+    rt_shader_program_handle programHandle;
     u32 elementNum;
     u32 vsUniformSize;
   } terrain_model;
   struct {
-    vertex_buffer_handle vertexBufferHandle;
-    index_buffer_handle indexBufferHandle;
-    vertex_array_handle vertexArrayHandle;
-    shader_program_handle programHandle;
+    rt_vertex_buffer_handle vertexBufferHandle;
+    rt_index_buffer_handle indexBufferHandle;
+    rt_vertex_array_handle vertexArrayHandle;
+    rt_shader_program_handle programHandle;
     u32 elementNum;
   } geometry_model;
-  img_data heightMapImg;
-  vec4s *geometry;
+  rt_image_data heightMapImg;
+  v4 *geometry;
   b32 initialized;
 } terrain_object;
 
 typedef struct skybox_object {
-  vertex_buffer_handle vertexBufferHandle;
-  index_buffer_handle indexBufferHandle;
-  vertex_array_handle vertexArrayHandle;
+  rt_vertex_buffer_handle vertexBufferHandle;
+  rt_index_buffer_handle indexBufferHandle;
+  rt_vertex_array_handle vertexArrayHandle;
 
-  image_handle texHandle;
-  sampler_handle samplerHandle;
-  shader_program_handle programHandle;
+  rt_image_handle texHandle;
+  rt_sampler_handle samplerHandle;
+  rt_shader_program_handle programHandle;
   u32 elementNum;
   u32 vsUniformSize;
   b32 initialized;
 } skybox_object;
 
 typedef struct model_data {
-  vertex_buffer_handle vertexBufferHandle;
-  index_buffer_handle indexBufferHandle;
-  vertex_array_handle vertexArrayHandle;
+  rt_vertex_buffer_handle vertexBufferHandle;
+  rt_index_buffer_handle indexBufferHandle;
+  rt_vertex_array_handle vertexArrayHandle;
 
   index_data meshData[32];
   model_material_data matData[32];
-  mat4s transform[32];
+  m4x4 transform[32];
   u32 meshNum;
 } model_data;
 
-typedef struct car_object {
+typedef struct car_properties {
+  f32 chassisMass;
+  f32 wheelMass;
+  f32 chassisFriction;
+  f32 frontWheelBaseFriction;
+  f32 rearWheelBaseFriction;
+  f32 slipRatioForceCurve[6]; 
+  f32 slipRatioForceCoeff;
+  f32 slipAngleForceCurve[6]; 
+  f32 slipAngleForceCoeffFW;
+  f32 slipAngleForceCoeffRW;
+
+  f32 motorTorqueCurve[6];
+  f32 motorTorque;
+  f32 gearRatios[6];
+  i32 gearNum;
+  v3 localCenter;
+  shape_box chassisShape;
+  shape_sphere wheelShape;
+  f32 suspensionPosHeight;
+  f32 suspensionHz;
+  f32 suspensionDamping;
+  f32 engineInertia;
+  f32 differentialRatio;
+  f32 transmissionEfficiency;
+} car_properties;
+
+typedef f32 audio_filter_state[4];
+
+typedef struct car_audio_state{
+  f64 engineCycle;
+  f64 windCycle;
+  i32 prevRpm;
+  audio_filter_state intakeFilter;
+  audio_filter_state engineFilter;
+  audio_filter_state gravelFilter;
+  audio_filter_state windFilter;
+  i32 sampleIndex;
+} audio_state;
+
+typedef struct car_state {
+  car_properties properties;
   model_data chassisModel;
   model_data wheelModel[4];
-  shader_program_handle programHandle;
-
+  rt_shader_program_handle programHandle;
+  car_audio_state audioState;
   union {
     rigid_body bodies[5];
     struct {
@@ -168,78 +190,108 @@ typedef struct car_object {
   } body;
   shape bodyShapes[12];
   union {
-    joint joints[12];
+    joint jointsAll[12];
     struct {
-      joint wheelHinge[4];
-      joint wheelSuspension[4];
-      joint wheelSuspensionLimits[4];
-    };
+      joint wheelHinge;
+      joint wheelSuspension;
+      joint wheelSuspensionLimits;
+    }joints[4];
   };
+  struct {
+    f32 frictionAdjustment[4];
+    f32 slipAngle[4];
+    f32 slipRatio[4];
+    f32 motorTorque;
+    f32 rpm;
+    i32 gear;
+    b32 accelerating;
+    f32 gearShiftT;
+  } stats; 
   contact_point contactPointStorage[MAX_CONTACTS];
   u32 contactPointNum;
   f32 turnAngle;
   b32 initialized;
-} game_object;
+} car_state;
 
-#define isBitSet(drawState, bit) drawState & bit
+#define isBitSet(drawState, bit) (drawState & bit)
 
-#define setBit(drawState, bit, set) set ? (drawState | bit) : (drawState & ~bit)
+#define setBit(drawState, bit, set) (set ? (drawState | bit) : (drawState & ~bit))
 
-#define toggleBit(drawState, bit) drawState ^ bit
+#define toggleBit(drawState, bit) (drawState ^ bit)
 
-typedef enum draw_state_bit {
-  DRAW_CAR                      = 1 << 0,
-  DRAW_CAR_COLLIDERS            = 1 << 1,
-  DRAW_TERRAIN                  = 1 << 2,
-  DRAW_TERRAIN_GEOMETRY         = 1 << 3,
-  DRAW_TERRAIN_GEOMETRY_NORMALS = 1 << 4,
-} draw_state_bit;
+enum visibility_state_bit {
+  visibility_state_car              = 1 << 0,
+  visibility_state_car_colliders    = 1 << 1,
+  visibility_state_terrain          = 1 << 2,
+  visibility_state_terrain_geometry = 1 << 3,
+  visibility_state_geometry_normals = 1 << 4,
+  visibility_state_slip_angle       = 1 << 4,
+};
 
-typedef struct deve_state {
+typedef struct debug_draw_state {
   b32 freeCameraView;
-  b32 drawDevePanel;
-  u16 drawState;
-} deve_state;
+  b32 drawDebugPanel;
+  u16 visibilityState;
+  v4 tireFrictions;
+} debug_draw_state;
+
+enum profiler_counter_entry {
+  profiler_counter_entry_simulation,
+  profiler_counter_entry_rendering,
+  profiler_counter_entry_ui,
+  profiler_counter_entry_audio,
+  profiler_counter_entry_total,
+  _profiler_counter_entry_num,
+};
 
 typedef struct profiler_state {
-  f64 totalAcc;
-  f64 simulationAcc;
-  f64 renderingAcc;
-  f64 total;
-  f64 simulation;
-  f64 rendering;
+  u64 accumulated[_profiler_counter_entry_num];
+  u64 prevAccumulated[_profiler_counter_entry_num];
+  u64 counter[_profiler_counter_entry_num]; 
+  f64 average[_profiler_counter_entry_num]; 
   f32 elapsedTime;
 } profiler_state;
 
-typedef struct game_state {
+
+#define profilerBegin(profiler, entry) \
+  profiler.counter[profiler_counter_entry_##entry] = platformApi->getPerformanceCounter()
+#define profilerEnd(profiler, entry) \
+  profiler.accumulated[profiler_counter_entry_##entry] += \
+  platformApi->getPerformanceCounter() - profiler.counter[profiler_counter_entry_##entry]
+
+#define profilerAverage(profiler, delta, stepSec) \
+  profiler.elapsedTime += delta; \
+  if (profiler.elapsedTime > stepSec) { \
+    u64 freq = platformApi->getPerformanceFrequency(); \
+    profiler.average[profiler_counter_entry_total] = 0.f; \
+    for(i32 i = 0; i < profiler_counter_entry_total; i++) { \
+      profiler.average[i] = 1000.f * (f64)(profiler.accumulated[i] - profiler.prevAccumulated[i]) /\
+        (stepSec * 60.0) / freq; \
+      profiler.prevAccumulated[i] = profiler.accumulated[i]; \
+      profiler.average[profiler_counter_entry_total] += profiler.average[i]; \
+    } \
+    profiler.elapsedTime = profiler.elapsedTime - stepSec; \
+  }
+
+enum debug_state {
+  game_state_intro = 0,
+  game_state_game,
+  _game_state_num
+};
+
+typedef struct car_game_state {
   b32 initialized;
+  debug_state state;
+  rt_audio_data ambient;
   input_state input;
   camera_state camera;
   skybox_object skybox;
   terrain_object terrain;
-  car_object car;
-  deve_state deve;
+  car_state car;
+  debug_draw_state debug;
   profiler_state profiler;
-} game_state;
+} car_game_state;
 
-static platform_api *platformApi;
-
-img_data importImage(memory_arena *tempArena, const char *imageFilePath, uint8_t channelNum);
-shader_data importShader(memory_arena *arena, const char *shaderVsFilePath,
+static platform_api *platformApi = NULL;
+rt_shader_data importShader(memory_arena *arena, const char *shaderVsFilePath,
                          const char *shaderFsFilePath);
-
-#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
-#define NK_INCLUDE_FONT_BAKING
-#define NK_INCLUDE_DEFAULT_FONT
-#define NK_UINT_DRAW_INDEX
-#define NK_INCLUDE_STANDARD_VARARGS
-
-struct nk_context;
-nk_context* rt_nuklear_alloc(memory_arena* permArena, memory_arena* tempArena);
-nk_context* rt_nuklear_setup(memory_arena* permArena,
-                             memory_arena* tempArena,
-                             rt_render_entry_buffer* buffer,
-                             loggerPtr log,
-                             assertPtr assert);
-nk_context* rt_nuklear_draw(memory_arena* tempArena, rt_render_entry_buffer* buffer, platform_api* api);
-void rt_nuklear_handle_input(rt_input_event* inputEventBuf);

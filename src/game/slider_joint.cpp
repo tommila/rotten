@@ -1,26 +1,27 @@
+#include "all.h"
 // Constraint derivations from
 // Constraints Derivation for Rigid Body Simulation in 3D by Daniel Chappuis
 
 // A slider joint only allows relative translation between two bodies in a single direction. It has
 // only one degree of freedom - Chapter 2.3
 static void applySliderLinearVelocityStep(rigid_body* bodyA, rigid_body* bodyB, slider_joint* joint,
-					  vec2s lambda,
-					  vec3s nA, vec3s nB,
-					  vec3s iA_rAPlusUCrossNA, vec3s iA_rAPlusUCrossNB,
-					  vec3s iB_rBCrossNA, vec3s iB_rBCrossNB) {
+					  v2 lambda,
+					  v3 nA, v3 nB,
+					  v3 iA_rAPlusUCrossNA, v3 iA_rAPlusUCrossNB,
+					  v3 iB_rBCrossNA, v3 iB_rBCrossNB) {
   f32 mA = joint->base.invMassA, mB = joint->base.invMassB;
 
-  vec3s impulse = nA * lambda.x + nB * lambda.y;
+  v3 impulse = nA * lambda.x + nB * lambda.y;
   {
-    vec3s V = mA * impulse;
-    vec3s W = iA_rAPlusUCrossNA * lambda.x + iA_rAPlusUCrossNB * lambda.y;
+    v3 V = mA * impulse;
+    v3 W = iA_rAPlusUCrossNA * lambda.x + iA_rAPlusUCrossNB * lambda.y;
 
     bodyA->velocity = bodyA->velocity - V;
     bodyA->angularVelocity = bodyA->angularVelocity - W;
   }
   {
-    vec3s V = mB * impulse;
-    vec3s W = iB_rBCrossNA * lambda.x + iB_rBCrossNB * lambda.y;
+    v3 V = mB * impulse;
+    v3 W = iB_rBCrossNA * lambda.x + iB_rBCrossNB * lambda.y;
 
     bodyB->velocity = bodyB->velocity + V;
     bodyB->angularVelocity = bodyB->angularVelocity + W;
@@ -28,7 +29,7 @@ static void applySliderLinearVelocityStep(rigid_body* bodyA, rigid_body* bodyB, 
 }
 
 inline void setupSliderJoint(joint* j, rigid_body* rbA, rigid_body* rbB,
-			     vec3s pivotA, vec3s pivotB, vec3s axisIn,
+			     v3 pivotA, v3 pivotB, v3 axisIn,
 			     f32 herz, f32 damping) {
   j->type = joint_type_slider;
   j->slider.base.herz = herz;
@@ -36,8 +37,8 @@ inline void setupSliderJoint(joint* j, rigid_body* rbA, rigid_body* rbB,
   j->slider.base.bodyA = rbA;
   j->slider.base.bodyB = rbB;
 
-  j->slider.base.localOriginAnchorA = pivotA;
-  j->slider.base.localOriginAnchorB = pivotB;
+  j->slider.base.localOriginAnchorA = {pivotA.x,pivotA.y,pivotA.z};
+  j->slider.base.localOriginAnchorB = {pivotB.x,pivotB.y,pivotB.z};
   j->slider.slideAxis = axisIn;
   j->slider.rangeMin = -0.25f;
   j->slider.rangeMax = 0.f;
@@ -50,6 +51,9 @@ inline void preSolveSliderJoint(slider_joint* joint, f32 h) {
   joint->base.localAnchorA = joint->base.localOriginAnchorA;
   joint->base.localAnchorB = joint->base.localOriginAnchorB;
 
+  v3 localAnchorA = joint->base.localAnchorA;
+  v3 localAnchorB = joint->base.localAnchorB;
+
   joint->base.invMassB = bodyB->invMass;
   joint->base.invMassA = bodyA->invMass;
 
@@ -57,51 +61,52 @@ inline void preSolveSliderJoint(slider_joint* joint, f32 h) {
   joint->base.invIA = bodyA->invWorlInertiaTensor;
 
   f32 invMA = joint->base.invMassA, invMB = joint->base.invMassB;
-  mat3s iA = joint->base.invIA, iB = joint->base.invIB;
+  m3x3 iA = joint->base.invIA;
+  m3x3 iB = joint->base.invIB;
 
-  mat3s qA = bodyA->orientation;
-  mat3s qB = bodyB->orientation;
+  m3x3 qA = bodyA->orientation;
+  m3x3 qB = bodyB->orientation;
 
-  vec3s rA = qA * joint->base.localAnchorA;
-  vec3s rB = qB * joint->base.localAnchorB;
+  v3 rA = qA * localAnchorA;
+  v3 rB = qB * localAnchorB;
 
-  vec3s aW = qA * joint->slideAxis;
-  vec3s nA = glms_vec3_norm_perpendicular(aW);
-  vec3s nB = glms_vec3_cross(nA, aW);
+  v3 aW = qA * joint->slideAxis;
+  v3 nA = perpendicular(aW);
+  v3 nB = v3_cross(nA, aW);
 
-  vec3s dcA = bodyA->deltaPosition;
-  vec3s dcB = bodyB->deltaPosition;
-  vec3s centerDiff = bodyB->position - bodyA->position;
+  v3 dcA = bodyA->deltaPosition;
+  v3 dcB = bodyB->deltaPosition;
+  v3 centerDiff = (bodyB->position - bodyA->position);
 
-  vec3s u = (dcB - dcA) + centerDiff + rB - rA;
+  v3 u = (dcB - dcA) + centerDiff + rB - rA;
 
-  vec3s rAPlusU = rA + u;
-  vec3s rAPlusUCrossNA = glms_vec3_cross(rAPlusU, nA);
-  vec3s rAPlusUCrossNB = glms_vec3_cross(rAPlusU, nB);
+  v3 rAPlusU = rA + u;
+  v3 rAPlusUCrossNA = v3_cross(rAPlusU, nA);
+  v3 rAPlusUCrossNB = v3_cross(rAPlusU, nB);
 
-  vec3s rBCrossNA = glms_vec3_cross(rB, nA);
-  vec3s rBCrossNB = glms_vec3_cross(rB, nB);
+  v3 rBCrossNA = v3_cross(rB, nA);
+  v3 rBCrossNB = v3_cross(rB, nB);
 
-  vec3s iA_rAPlusUCrossNA = iA * rAPlusUCrossNA;
-  vec3s iA_rAPlusUCrossNB = iA * rAPlusUCrossNB;
+  v3 iA_rAPlusUCrossNA = iA * rAPlusUCrossNA;
+  v3 iA_rAPlusUCrossNB = iA * rAPlusUCrossNB;
 
-  vec3s iB_rBCrossNA = iB * rBCrossNA;
-  vec3s iB_rBCrossNB = iB * rBCrossNB;
+  v3 iB_rBCrossNA = iB * rBCrossNA;
+  v3 iB_rBCrossNB = iB * rBCrossNB;
 
   f32 invMass = (invMA + invMB);
 
   // Constraint mass matrix
   // (eq 59)
-  mat2s K = {invMass + glms_vec3_dot(rAPlusUCrossNA, iA_rAPlusUCrossNA) +
-                 glms_vec3_dot(rBCrossNA, iB_rBCrossNA),
-             glms_vec3_dot(rAPlusUCrossNA, iA_rAPlusUCrossNB) +
-                 glms_vec3_dot(rBCrossNA, iB_rBCrossNB),
-             glms_vec3_dot(rAPlusUCrossNB, iA_rAPlusUCrossNA) +
-                 glms_vec3_dot(rBCrossNB, iB_rBCrossNA),
-             invMass + glms_vec3_dot(rAPlusUCrossNB, iA_rAPlusUCrossNB) +
-                 glms_vec3_dot(rBCrossNB, iB_rBCrossNB)};
+  m2x2 K = {invMass + v3_dot(rAPlusUCrossNA, iA_rAPlusUCrossNA) +
+                 v3_dot(rBCrossNA, iB_rBCrossNA),
+             v3_dot(rAPlusUCrossNA, iA_rAPlusUCrossNB) +
+                 v3_dot(rBCrossNA, iB_rBCrossNB),
+             v3_dot(rAPlusUCrossNB, iA_rAPlusUCrossNA) +
+                 v3_dot(rBCrossNB, iB_rBCrossNA),
+             invMass + v3_dot(rAPlusUCrossNB, iA_rAPlusUCrossNB) +
+                 v3_dot(rBCrossNB, iB_rBCrossNB)};
 
-  joint->invEffectiveMass = glms_mat2_inv(K);
+  joint->invEffectiveMass = m2x2_inverse(K);
   joint->centerDiff0 = centerDiff;
 
   calculateSoftConstraintProperties(
@@ -114,25 +119,29 @@ inline void solveSliderJoint(slider_joint* joint, f32 h, f32 invH,
   rigid_body* bodyA = joint->base.bodyA;
   rigid_body* bodyB = joint->base.bodyB;
 
-  vec3s vA = bodyA->velocity;
-  vec3s wA = bodyA->angularVelocity;
-  vec3s vB = bodyB->velocity;
-  vec3s wB = bodyB->angularVelocity;
+  v3 vA = bodyA->velocity;
+  v3 wA = bodyA->angularVelocity;
 
-  mat3s iA = joint->base.invIA, iB = joint->base.invIB;
+  v3 vB = bodyB->velocity;
+  v3 wB = bodyB->angularVelocity;
 
+  m3x3 iA = joint->base.invIA;
+  m3x3 iB = joint->base.invIB;
+
+  v3 localAnchorA = joint->base.localAnchorA;
+  v3 localAnchorB = joint->base.localAnchorB;
   {
-    vec2s bias = GLMS_VEC2_ZERO_INIT;
+    v2 bias = V2_ZERO;
     f32 massScale = 1.0f;
     f32 impulseScale = 0.0f;
 
-    vec3s deltaV = vB - vA;
+    v3 deltaV = vB - vA;
 
-    mat3s qA = bodyA->orientation;
-    mat3s qB = bodyB->orientation;
+    m3x3 qA = bodyA->orientation;
+    m3x3 qB = bodyB->orientation;
 
-    vec3s rA = qA * joint->base.localAnchorA;
-    vec3s rB = qB * joint->base.localAnchorB;
+    v3 rA = qA * localAnchorA;
+    v3 rB = qB * localAnchorB;
 
     // The two vectors n1 and n2 are two unit orthogonal vectors that are
     // orthogonal to the slider axis a. At the joint creation, we convert the
@@ -141,30 +150,30 @@ inline void solveSliderJoint(slider_joint* joint, f32 h, f32 invH,
     // obtain the vector aW. Then, we create the two orthogonal vectors n1 and
     // n2 that are orthogonal to aW.
 
-    vec3s aW = qA * joint->slideAxis;
-    vec3s nA = glms_vec3_norm_perpendicular(aW);
-    vec3s nB = glms_vec3_cross(nA, aW);
+    v3 aW = qA * joint->slideAxis;
+    v3 nA = perpendicular(aW);
+    v3 nB = v3_cross(nA, aW);
 
-    vec3s dcA = bodyA->deltaPosition;
-    vec3s dcB = bodyB->deltaPosition;
+    v3 dcA = bodyA->deltaPosition;
+    v3 dcB = bodyB->deltaPosition;
 
-    vec3s u = (dcB - dcA) + joint->centerDiff0 + rB - rA;
+    v3 u = (dcB - dcA) + joint->centerDiff0 + rB - rA;
 
-    vec3s rAPlusU = rA + u;
-    vec3s rAPlusUCrossNA = glms_vec3_cross(rAPlusU, nA);
-    vec3s rAPlusUCrossNB = glms_vec3_cross(rAPlusU, nB);
+    v3 rAPlusU = rA + u;
+    v3 rAPlusUCrossNA = v3_cross(rAPlusU, nA);
+    v3 rAPlusUCrossNB = v3_cross(rAPlusU, nB);
 
-    vec3s rBCrossNA = glms_vec3_cross(rB, nA);
-    vec3s rBCrossNB = glms_vec3_cross(rB, nB);
+    v3 rBCrossNA = v3_cross(rB, nA);
+    v3 rBCrossNB = v3_cross(rB, nB);
 
-    vec3s iA_rAPlusUCrossNA = iA * rAPlusUCrossNA;
-    vec3s iA_rAPlusUCrossNB = iA * rAPlusUCrossNB;
+    v3 iA_rAPlusUCrossNA = iA * rAPlusUCrossNA;
+    v3 iA_rAPlusUCrossNB = iA * rAPlusUCrossNB;
 
-    vec3s iB_rBCrossNA = iB * rBCrossNA;
-    vec3s iB_rBCrossNB = iB * rBCrossNB;
+    v3 iB_rBCrossNA = iB * rBCrossNA;
+    v3 iB_rBCrossNB = iB * rBCrossNB;
 
-    f32 nADotDeltaV = glms_vec3_dot(nA, deltaV);
-    f32 nBDotDeltaV = glms_vec3_dot(nB, deltaV);
+    f32 nADotDeltaV = v3_dot(nA, deltaV);
+    f32 nBDotDeltaV = v3_dot(nB, deltaV);
 
     // CPos(s) = (x2 + r2 − x1 − r1) · n1
     //            x2 + r2 − x1 − r1) · n2)
@@ -175,18 +184,17 @@ inline void solveSliderJoint(slider_joint* joint, f32 h, f32 invH,
     //      = (n1 · (v2 - v1) + ω2 · (r2 × n1) − ω1 · ((r1 + u) × n1)
     //         n2 · (v2 - v1) + ω2 · (r2 × n2) − ω1 · ((r1 + u) × n2))
     // Jv = CDot
-    vec2s jv = {nADotDeltaV +
-		glms_vec3_dot(wB, rBCrossNA) -
-		glms_vec3_dot(wA, rAPlusUCrossNA),
+    v2 jv = {nADotDeltaV +
+		v3_dot(wB, rBCrossNA) -
+		v3_dot(wA, rAPlusUCrossNA),
                 nBDotDeltaV +
-		glms_vec3_dot(wB, rBCrossNB) -
-		glms_vec3_dot(wA, rAPlusUCrossNB)};
+		v3_dot(wB, rBCrossNB) -
+		v3_dot(wA, rAPlusUCrossNB)};
 
     if (useBias) {
       // Bias velocity vector
       // bias = β / ∆t * CPos(s)
-      vec2s CPos = {glms_vec3_dot(u, nA),
-                    glms_vec3_dot(u, nB)};
+      v2 CPos = {v3_dot(u, nA), v3_dot(u, nB)};
 
       bias = joint->base.biasCoefficient * CPos;
       massScale = joint->base.massCoefficient;
@@ -196,9 +204,9 @@ inline void solveSliderJoint(slider_joint* joint, f32 h, f32 invH,
     // Calculate lagrange multiplier:
     //
     // lambda = -K^-1 (Jv + b)
-    vec2s impulse = massScale * (-1.f * joint->invEffectiveMass * (jv + bias)) -
+    v2 impulse = massScale * (-1.f * joint->invEffectiveMass * (jv + bias)) -
                     impulseScale * joint->totalImpulse;
-    vec2s newImpulse = joint->totalImpulse + impulse;
+    v2 newImpulse = joint->totalImpulse + impulse;
     // Store total impulse
     impulse = newImpulse - joint->totalImpulse;
     joint->totalImpulse = newImpulse;
@@ -214,37 +222,45 @@ inline void warmStartSliderJoint(slider_joint* joint) {
   rigid_body* bodyA = joint->base.bodyA;
   rigid_body* bodyB = joint->base.bodyB;
 
-  mat3s iA = joint->base.invIA, iB = joint->base.invIB;
+  m3x3 iA = joint->base.invIA;
+  m3x3 iB = joint->base.invIB;
 
-  mat3s qA = bodyA->orientation;
-  mat3s qB = bodyB->orientation;
+  m3x3 qA = bodyA->orientation;
+  m3x3 qB = bodyB->orientation;
 
-  vec3s rA = qA * joint->base.localAnchorA;
-  vec3s rB = qB * joint->base.localAnchorB;
+  v3 localAnchorA = joint->base.localAnchorA;
+  v3 localAnchorB = joint->base.localAnchorB;
+
+  v3 rA = qA * localAnchorA;
+  v3 rB = qB * localAnchorB;
 
   // constraint setup
-  vec3s aW = qA * joint->slideAxis;
-  vec3s nA = glms_vec3_norm_perpendicular(aW);
-  vec3s nB = glms_vec3_cross(nA, aW);
+  v3 aW = qA * joint->slideAxis;
+  v3 nA = perpendicular(aW);
+  v3 nB = v3_cross(nA, aW);
 
-  vec3s dcA = bodyA->deltaPosition;
-  vec3s dcB = bodyB->deltaPosition;
-  vec3s centerDiff = bodyB->position - bodyA->position;
+  v3 dcA = bodyA->deltaPosition;
+  v3 dcB = bodyB->deltaPosition;
 
-  vec3s u = (dcB - dcA) + centerDiff + rB - rA;
+  v3 pA = bodyA->position;
+  v3 pB = bodyB->position;
 
-  vec3s rAPlusU = rA + u;
-  vec3s rAPlusUCrossNA = glms_vec3_cross(rAPlusU, nA);
-  vec3s rAPlusUCrossNB = glms_vec3_cross(rAPlusU, nB);
+  v3 centerDiff = pB - pA;
 
-  vec3s rBCrossNA = glms_vec3_cross(rB, nA);
-  vec3s rBCrossNB = glms_vec3_cross(rB, nB);
+  v3 u = (dcB - dcA) + centerDiff + rB - rA;
 
-  vec3s iA_rAPlusUCrossNA = iA * rAPlusUCrossNA;
-  vec3s iA_rAPlusUCrossNB = iA * rAPlusUCrossNB;
+  v3 rAPlusU = rA + u;
+  v3 rAPlusUCrossNA = v3_cross(rAPlusU, nA);
+  v3 rAPlusUCrossNB = v3_cross(rAPlusU, nB);
 
-  vec3s iB_rBCrossNA = iB * rBCrossNA;
-  vec3s iB_rBCrossNB = iB * rBCrossNB;
+  v3 rBCrossNA = v3_cross(rB, nA);
+  v3 rBCrossNB = v3_cross(rB, nB);
+
+  v3 iA_rAPlusUCrossNA = iA * rAPlusUCrossNA;
+  v3 iA_rAPlusUCrossNB = iA * rAPlusUCrossNB;
+
+  v3 iB_rBCrossNA = iB * rBCrossNA;
+  v3 iB_rBCrossNB = iB * rBCrossNB;
 
   applySliderLinearVelocityStep(bodyA, bodyB, joint, joint->totalImpulse, nA,
                                 nB, iA_rAPlusUCrossNA, iA_rAPlusUCrossNB,

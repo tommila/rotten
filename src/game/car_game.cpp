@@ -1,37 +1,75 @@
 #include "all.h"
 
-inline img_data importImage(memory_arena *arena, const char *filePath, uint8_t channelNum) {
-  img_data imgData = {};
-  void *data;
-  u32 fileSize;
-  loadFile(arena, filePath, true, data, &fileSize);
-  int x, y, n;
-  stbi_uc *pixels = stbi_load_from_memory(
-      (stbi_uc *)data, (i32)fileSize, &x, &y, &n, channelNum);
-  if (pixels == NULL) {
-    LOG(LOG_LEVEL_ERROR, "File load error %s", stbi_failure_reason());
-    ASSERT(0);
+car_game_state* _game = NULL;
+
+extern "C" RT_GAME_AUDIO_CALLBACK(gameAudioUpdate) {  
+  if (_game && _game->initialized) {
+    u64 count = platform.api.getPerformanceCounter();
+    car_audio_state* carAudioState = &_game->car.audioState;
+    i32 rpm = _game->car.stats.rpm;
+    f32 invSampleRate = 1.f / audioOut.samplesPerSecond;
+    for (i32 i = 0; i < audioOut.sampleCount; i++) {
+      i16* bufferOut = (i16*)audioOut.buffer + i * 2;
+      f32 audioSample[2] = {0.0f, 0.0f};
+      carAudioState->sampleIndex++;
+      f32 engineSample = sampleEngineAudio(carAudioState, audioOut.samplesPerSecond, 
+                                           rpm, _game->car.stats.accelerating) * 0.3f;
+
+      // Shitty audio effects for sliding and wind
+      f32 r = ((f32)rand() / (f32)RAND_MAX) * 2.f - 1.f;
+      f32 gravelVolume = MIN(fabs(_game->car.stats.slipAngle[2]),1.0);
+      f32 gravelSample = 
+        filter(r, invSampleRate, 20,0.2f, Lowpass, carAudioState->gravelFilter);
+      gravelSample *= gravelVolume;
+
+      f32 windForce = lerpPerlinNoise1D(carAudioState->sampleIndex * 0.00001f);
+      f32 windSample = 
+        filter(r, invSampleRate, 500 + 1500 * windForce, 0.8f, Lowpass, carAudioState->windFilter);
+      windSample *= windForce * 0.1f;
+
+      // Background music
+      i32 ambientIndex = (carAudioState->sampleIndex / 2) % _game->ambient.sampleNum;
+      f32 ambientMusicVolume = CLAMP(sinf(carAudioState->sampleIndex * invSampleRate / 15)
+                                     + 0.25f, 0.0f, 1.f);
+      f32 ambientMusic[2] = {
+        (f32)_game->ambient.buffer[ambientIndex * 2] / INT16_MAX * 0.8f * ambientMusicVolume,
+        (f32)_game->ambient.buffer[ambientIndex * 2 + 1] / INT16_MAX * 0.8f * ambientMusicVolume
+      };
+
+      audioSample[0] = mixAudio(audioSample[0], gravelSample);
+      audioSample[1] = mixAudio(audioSample[1], gravelSample);
+
+      audioSample[0] = mixAudio(audioSample[0], engineSample);
+      audioSample[1] = mixAudio(audioSample[1], engineSample);
+
+      audioSample[0] = mixAudio(audioSample[0], windSample );
+      audioSample[1] = mixAudio(audioSample[1], windSample);
+
+      audioSample[0] = mixAudio(audioSample[0], ambientMusic[0]);
+      audioSample[1] = mixAudio(audioSample[1], ambientMusic[1]);
+
+      bufferOut[0] = audioSample[0] * 12000;
+      bufferOut[1] = audioSample[1] * 12000;
+    }
+    count = platform.api.getPerformanceCounter() - count;
+    _game->profiler.accumulated[profiler_counter_entry_audio] += count;
   }
-
-  imgData.pixels = pixels;
-  imgData.dataSize = x * y * 4;
-  imgData.width = x;
-  imgData.height = y;
-  imgData.depth = 8;
-  imgData.components = (u32)4;
-
-  return imgData;
 }
 
-inline shader_data importShader(memory_arena *arena, const char *shaderVsFilePath,
+inline str8 loadBin(const char* path) {
+  str8 result;
+  result.buffer = (u8*)platformApi->loadBinaryFile(path, &result.len);
+  return result;
+}
+
+inline rt_shader_data importShader(memory_arena *arena, const char *shaderVsFilePath,
                          const char *shaderFsFilePath) {
-  shader_data shaderData = {0};
+  rt_shader_data shaderData = {0};
 
-  u32 _unused = 0;
-  loadFile(arena, shaderVsFilePath, false, shaderData.vsData, &_unused);
-  loadFile(arena, shaderFsFilePath, false, shaderData.fsData, &_unused);
+  shaderData.vsData = loadBin(shaderVsFilePath);
+  shaderData.fsData = loadBin(shaderFsFilePath);
 
-  if (shaderData.fsData == 0 || shaderData.vsData == 0) {
+  if (shaderData.fsData.len == 0 || shaderData.vsData.len == 0) {
     LOG(LOG_LEVEL_ERROR, "Shader Load failed\n");
   }
   LOG(LOG_LEVEL_DEBUG, "Shader Loaded\n");
@@ -39,257 +77,217 @@ inline shader_data importShader(memory_arena *arena, const char *shaderVsFilePat
   return shaderData;
 }
 
-extern "C" RT_GAME_UPDATE_AND_RENDER(gameUpdate) {
-  duration += delta;
 
-  platformApi = &platform->api;
+extern "C" RT_GAME_UPDATE_AND_RENDER(gameUpdate) {
+
+  platformApi = &platform.api;
   ASSERT_ = platformApi->assert;
   LOG = platformApi->logger;
   MALLOC = _malloc;
   REALLOC = _realloc;
   FREE = _free;
 
-  u64 totalStartCount = platformApi->getPerformanceCounter();
-
   memory_arena tempMemory;
   memory_arena permanentMemory;
 
-  memArena_init(&tempMemory, platform->transientMemBuffer, platform->transientMemSize);
-  memArena_init(&permanentMemory, platform->permanentMemBuffer, platform->permanentMemSize);
+  memArena_init(&tempMemory, platform.temporaryMemBuffer, platform.temporaryMemSize);
+  memArena_init(&permanentMemory, platform.permanentMemBuffer, platform.permanentMemSize);
 
   stack = &tempMemory;
 
-  game_state *game = (game_state*)memArena_alloc(&permanentMemory, sizeof(game_state));
-
-  rt_render_entry_buffer rendererBuffer;
+  car_game_state *game = (car_game_state*)memArena_alloc(&permanentMemory, sizeof(car_game_state));
+  _game = game;
+  rt_command_buffer rendererBuffer;
   memArena_init(&rendererBuffer.arena,
 		memArena_alloc(&tempMemory, KILOBYTES(256)), KILOBYTES(256));
-  nk_context* ctx = rt_nuklear_alloc(&permanentMemory, &tempMemory);
-
+  ui_widget_context* widgetContext = allocUiWidgets(&tempMemory);
   b32 initialize = !game->initialized || reloaded;
 
+  allocTerrain(game, &permanentMemory);
   // Initial component initialization
   if (initialize) {
     LOG(LOG_LEVEL_DEBUG, "terrain loaded");
     if (!game->initialized) {
       game->camera.fov = 90;
-      game->camera.position = {-30.0, 25.0, -30.0};
-      game->camera.front = {0.0, 0.0, 1.0};
+      game->camera.position = (v3){-30.0, 25.0, -30.0};
       game->camera.yaw = 0.f;
-      game->camera.pitch = -50.f;
+      game->camera.pitch = 0.f;
 
-      game->deve.drawState = DRAW_CAR | DRAW_TERRAIN;
-      game->deve.drawDevePanel = true;
-      game->initialized = true;
+      game->debug.visibilityState = visibility_state_car | visibility_state_terrain;
+      game->debug.drawDebugPanel = false;
+      game->input.pausePhysics = true;
     }
-    ctx = rt_nuklear_setup(&permanentMemory, &tempMemory, &rendererBuffer, LOG,
-                           ASSERT_);
-
-    skyboxInit(game, &permanentMemory, &tempMemory, &rendererBuffer, reloaded,
-               assetModTime);
-    terrainInit(game, &permanentMemory, &tempMemory, &rendererBuffer, reloaded,
-                assetModTime);
-    carInit(game, &permanentMemory, &tempMemory, &rendererBuffer, reloaded,
+    setupUiWidgets(widgetContext);    
+    createSkyBox(game, &permanentMemory, &tempMemory, &rendererBuffer);
+    createTerrain(game, &permanentMemory, &tempMemory, &rendererBuffer);
+    createCar(game, &permanentMemory, &tempMemory, &rendererBuffer, reloaded,
             assetModTime);
-    platformApi->renderer_flushCommandBuffer(&rendererBuffer);
+    platformApi->flushCommandBuffer(&rendererBuffer);
+    platformApi->flushCommandBuffer(&widgetContext->buffer);
+    
+    if (!game->initialized) {
+    rt_audio_data result = platformApi->loadOGG("assets/soundscape-dust-ambient-quitar.ogg");
+
+     game->ambient = result;
+     ASSERT(result.buffer != 0);
+    }
+    game->initialized = true;
   }
 
   // Input event parsing.
   for (u32 i = 0; i < arrayLen(game->input.buttons); i++) {
     button_state b = game->input.buttons[i];
     game->input.buttons[i] =
-      (b == BUTTON_PRESSED) ? BUTTON_HELD
-      : (b == BUTTON_RELEASED) ? BUTTON_UP
+      (b == button_state_pressed) ? button_state_held
+      : (b == button_state_released) ? button_state_up
       : b;
   }
 
   for (u32 i = 0; i < arrayLen(game->input.mouse.button); i++) {
     button_state b = game->input.mouse.button[i];
     game->input.mouse.button[i] =
-      (b == BUTTON_PRESSED) ? BUTTON_HELD
-      : (b == BUTTON_RELEASED) ? BUTTON_UP
+      (b == button_state_pressed) ? button_state_held
+      : (b == button_state_released) ? button_state_up
       : b;
   }
   game->input.mouse.movement[0] = 0;
   game->input.mouse.movement[1] = 0;
 
-  b32 pausePhysics = game->input.pausePhysics;
 
-  for (u32 i = 0; i < INPUT_BUFFER_SIZE; i++) {
-    rt_input_event* input = inputEvents + i;
-    if (input->type == RT_INPUT_TYPE_NONE) {
-      break;
-    }
-    if (input->type == RT_INPUT_TYPE_KEY) {
-      rt_key_event *keyEvt = &input->key;
-      if (strcmp(keyEvt->keycode, "W") == 0) {
-	game->input.camMoveUp = setButtonState(keyEvt->pressed);
-      }
-      if (strcmp(keyEvt->keycode, "S") == 0) {
-	game->input.camMoveDown = setButtonState(keyEvt->pressed);
-      }
-      if (strcmp(keyEvt->keycode, "A") == 0) {
-	game->input.camMoveLeft = setButtonState(keyEvt->pressed);
-      }
-      if (strcmp(keyEvt->keycode, "D") == 0) {
-	game->input.camMoveRight = setButtonState(keyEvt->pressed);
-      }
+  b32 pausePhysics = game->input.pausePhysics;
+  for(u32 i = 0; i < input.eventNum; i++) {
+    rt_input_event* event = input.events + i;
+    if (event->type == rt_input_type_key) {
+      rt_key_event *keyEvt = &event->key;
       if (strcmp(keyEvt->keycode, "Up") == 0) {
-	game->input.moveUp = setButtonState(keyEvt->pressed);
+        game->input.moveUp = setButtonState(keyEvt->pressed);
       }
       if (strcmp(keyEvt->keycode, "Down") == 0) {
-	game->input.moveDown = setButtonState(keyEvt->pressed);
+        game->input.moveDown = setButtonState(keyEvt->pressed);
       }
       if (strcmp(keyEvt->keycode, "Left") == 0) {
-	game->input.moveLeft = setButtonState(keyEvt->pressed);
+        game->input.moveLeft = setButtonState(keyEvt->pressed);
       }
       if (strcmp(keyEvt->keycode, "Right") == 0) {
-	game->input.moveRight = setButtonState(keyEvt->pressed);
+        game->input.moveRight = setButtonState(keyEvt->pressed);
       }
       if (strcmp(keyEvt->keycode, "R") == 0) {
-	game->input.reset = setButtonState(keyEvt->pressed);
+        game->input.reset = setButtonState(keyEvt->pressed);
       }
       if (strcmp(keyEvt->keycode, "P") == 0 && keyEvt->pressed) {
-	game->input.pausePhysics = !game->input.pausePhysics;
-      }
-      if (strcmp(keyEvt->keycode, "N") == 0 && keyEvt->pressed) {
-	pausePhysics = false;
+        if (game->state != game_state_intro) {
+          game->input.pausePhysics = !game->input.pausePhysics;
+        }
       }
       if (strcmp(keyEvt->keycode, "Escape") == 0) {
-	game->input.quit = setButtonState(keyEvt->pressed);
+        game->input.quit = setButtonState(keyEvt->pressed);
+      }
+      if (strcmp(keyEvt->keycode, "Return") == 0 
+        && keyEvt->mod & rt_key_mod_left_alt 
+        && keyEvt->pressed) {
+        platformApi->toggleFullscreen();
       }
       if (strcmp(keyEvt->keycode, "C") == 0 && keyEvt->pressed) {
-	game->deve.freeCameraView = !game->deve.freeCameraView;
+        if (game->state != game_state_intro) {
+          game->debug.freeCameraView = !game->debug.freeCameraView;
+        }
       }
       if (strcmp(keyEvt->keycode, "F5") == 0 && keyEvt->pressed) {
-        game->deve.drawDevePanel = !game->deve.drawDevePanel;
+        game->debug.drawDebugPanel = !game->debug.drawDebugPanel;
+      }
+      if (strcmp(keyEvt->keycode, "Space") == 0 && keyEvt->pressed) {
+        game->state = game_state_game;
+        game->input.pausePhysics = 0;
+        game->camera.yaw = 0.f;
+        game->camera.pitch = 0.f;
       }
     }
-    else if(input->type == RT_INPUT_TYPE_MOUSE) {
-      rt_mouse_event *mouse = &input->mouse;
+    else if(event->type == rt_input_type_mouse) {
+      rt_mouse_event *mouse = &event->mouse;
+      game->input.mouse.movement[0] =
+        (i32)mouse->delta[0];
+      game->input.mouse.movement[1] =
+        (i32)mouse->delta[1];
+      game->input.mouse.wheel = mouse->wheel;
+      game->input.mouse.position[0] = mouse->position[0];
+      game->input.mouse.position[1] = mouse->position[1];
+    }
+    else if(event->type == rt_input_type_mouse_button) {
+      rt_mouse_button_event *mouse = &event->mouseButton;
       for (u32 i = 0; i < arrayLen(game->input.mouse.button); i++) {
-	if (mouse->buttonIdx) {
-	  game->input.mouse.button[mouse->buttonIdx - 1] =
-	    setButtonState(mouse->pressed);
-	}
-	else {
-
-	  game->input.mouse.movement[0] +=
-	    (i32)mouse->position[0] - (i32)game->input.mouse.position[0];
-	  game->input.mouse.movement[1] +=
-	    (i32)mouse->position[1] - (i32)game->input.mouse.position[1];
-	  game->input.mouse.position[0] = mouse->position[0];
-	  game->input.mouse.position[1] = mouse->position[1];
-	  game->input.mouse.wheel = mouse->wheel;
-	}
+        game->input.mouse.button[mouse->buttonIdx - 1] =
+          setButtonState(mouse->pressed);
       }
     }
+
   }
   b32 quit = game->input.quit;
 
   /// Camera
-  vec3s camTarget = game->car.body.chassis.position -
-    game->car.body.chassis.localCenter;
   camera_state *cam = &game->camera;
   cam->fov = CLAMP(cam->fov - game->input.mouse.wheel * 5, 45, 90);
-  mat4s projM = glms_perspective(glm_rad(cam->fov), float(1280) / float(840),
+  m4x4 projM = perspective(DEG2RAD(cam->fov), f32(display.size.x) / f32(display.size.y),
 				 0.1f, 10000.0f);
-  mat4s viewM = GLMS_MAT4_IDENTITY_INIT;
+  m4x4 viewM = M4X4_IDENTITY;
 
-  if (game->input.mouse.button[0]) {
-    cam->yaw -= game->input.mouse.movement[0] * 0.1f;
-    cam->pitch += game->input.mouse.movement[1] * 0.1f;
-  }
   /// Free view camera
-  if (game->deve.freeCameraView) {
-    vec3s forward = {sinf(glm_rad(cam->yaw)) * -sinf(glm_rad(cam->pitch)),
-                     -cosf(glm_rad(cam->yaw)), cosf(glm_rad(cam->pitch))};
-
-    vec3s right = {sinf(glm_rad(cam->yaw - 90.f)),
-                   -cosf(glm_rad(cam->yaw - 90.f)), 0.0f};
-
-    cam->front = glms_vec3_normalize(forward);
-    cam->right = glms_vec3_normalize(right);
-
-    f32 camSpeed = 50.0f * delta;
-    if (game->input.camMoveUp >= BUTTON_PRESSED) {
-      cam->position = cam->position + cam->front * camSpeed;
-    }
-    if (game->input.camMoveDown >= BUTTON_PRESSED) {
-      cam->position = cam->position - cam->front * camSpeed;
-    }
-    if (game->input.camMoveLeft >= BUTTON_PRESSED) {
-      cam->position = cam->position - cam->right * camSpeed;
-    }
-    if (game->input.camMoveRight >= BUTTON_PRESSED) {
-      cam->position = cam->position + cam->right * camSpeed;
-    }
-
-    mat4s pitch = glms_rotate_x(GLMS_MAT4_IDENTITY, glm_rad(cam->pitch));
-    mat4s yaw = glms_rotate_z(pitch, -glm_rad(cam->yaw));
-    viewM = glms_translate_make(cam->position);
-    viewM = yaw * viewM;
+  m3x3 orientation = game->car.body.chassis.orientation;
+  if (game->state == game_state_intro) {
+    cam->yaw += 0.1f;
+    orientation = m3x3_rotate_make({0.0f, 0.f, -DEG2RAD(cam->yaw)});
+    orientation = orientation * m3x3_rotate_make({0.0f, DEG2RAD(cam->pitch),0});
   }
-  // 3rd person car camera
-  else {
-    vec3s pos = camTarget - game->car.body.chassis.orientation *
-      glms_vec3_rotate((vec3s){5.f,0.f,-3.f}, cam->yaw * 0.1f, GLMS_ZUP);
-    cam->position = LERP(cam->position, pos, 0.1f);
-    viewM = glms_lookat(cam->position, camTarget, GLMS_ZUP);
+  else if(game->state == game_state_game) {
+    if (game->debug.freeCameraView) {
+      cam->yaw += game->input.mouse.movement[0] * 2;
+      cam->pitch -= game->input.mouse.movement[1] * 2;
+      orientation = m3x3_rotate_make({0.0f, 0.f, -DEG2RAD(cam->yaw)});
+      orientation = orientation * m3x3_rotate_make({0.0f, DEG2RAD(cam->pitch),0});
+    }
   }
+  v3 camTarget = game->car.body.chassis.position -
+    game->car.body.chassis.localCenter;
+  v3 camOffset = (v3){5.f,0.f,-3.f} * orientation;
+  v3 camPos = camTarget - camOffset;
+  cam->position = LERP(cam->position, camPos, 
+                       (game->debug.freeCameraView || initialize) ? 1.0f : 0.1f);
+  viewM = lookAt(cam->position - camTarget,(v3){0.0f,0.0f, 1.f});
 
-  rt_renderer_pushEntry(&rendererBuffer, rt_render_entry_begin);
+  rt_pushRenderCommand(&rendererBuffer, begin);
 
-  rt_render_entry_clear* clearCmd =
-    rt_renderer_pushEntry(&rendererBuffer, rt_render_entry_clear);
+  rt_command_clear* clearCmd =
+    rt_pushRenderCommand(&rendererBuffer, clear);
   clearCmd->clearColor[0] = 90.f/255.f;
   clearCmd->clearColor[1] = 128.f/255.f;
   clearCmd->clearColor[2] = 143.f/255.f;
   clearCmd->clearColor[3] = 1.0f;
-  clearCmd->width = 1920;
-  clearCmd->height = 1080;
+  clearCmd->width = display.size.x;
+  clearCmd->height = display.size.y;
 
-  // Draw functions
+   // Draw functions
   renderSkybox(game, &tempMemory, &rendererBuffer, viewM, projM);
   renderTerrain(game, &tempMemory, &rendererBuffer, viewM, projM);
-  renderAndUpdateCar(game,&tempMemory, &rendererBuffer, viewM, projM,
-		     pausePhysics ? 0 : delta);
+  updateCar(game,&tempMemory, &rendererBuffer,
+                     widgetContext, viewM, projM,
+		     pausePhysics ? 0 : time.delta);
 
+  renderCar(game, &tempMemory, &rendererBuffer, widgetContext, viewM, projM);
   // Nuklear ui
-  if (game->deve.drawDevePanel) {
-    ui_draw(ctx, game, delta);
-    rt_nuklear_handle_input(inputEvents);
-    ctx = rt_nuklear_draw(&tempMemory, &rendererBuffer, platformApi);
-  }
+  readyUiWidgets(widgetContext, display.size);
+  profilerBegin(game->profiler, ui);
+  drawUI(widgetContext,
+          game, display.size,
+          time.delta, &tempMemory);
+  profilerEnd(game->profiler, ui);
+  renderUIWidgets(widgetContext, &tempMemory);
 
-  // TODO: Something wonky with counter values, figure it out.
-  u64 rendererStartCount = platformApi->getPerformanceCounter();
-  platformApi->renderer_flushCommandBuffer(&rendererBuffer);
+  profilerBegin(game->profiler, rendering);
+  platformApi->flushCommandBuffer(&rendererBuffer);
+  platformApi->flushCommandBuffer(&widgetContext->buffer);
 
   // Profiler
-  game->profiler.renderingAcc +=
-      platformApi->getPerformanceCounter() - rendererStartCount;
-
-  game->profiler.totalAcc +=
-      platformApi->getPerformanceCounter() - totalStartCount;
-
-  game->profiler.elapsedTime += delta;
-  if (game->profiler.elapsedTime > 1.f) {
-    u64 freq = (f64)platformApi->getPerformanceFrequency();
-    game->profiler.elapsedTime = game->profiler.elapsedTime - 1.f;
-    game->profiler.rendering =
-        1000.f * (f64)game->profiler.renderingAcc / 60.f / (f64)freq;
-
-    game->profiler.simulation =
-        1000.f * (f64)game->profiler.simulationAcc / 60.f / (f64)freq;
-
-    game->profiler.total =
-        1000.f * (f64)game->profiler.totalAcc / 60.f / (f64)freq;
-
-    game->profiler.renderingAcc = 0;
-    game->profiler.simulationAcc = 0;
-    game->profiler.totalAcc = 0;
-  };
-
+  profilerEnd(game->profiler, rendering);
+  profilerAverage(game->profiler, time.delta, 1.0);
   return quit;
 }
+

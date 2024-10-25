@@ -2,12 +2,13 @@
 
 #define MAX_CONTACTS 32
 
-static f32 Kdl = 0.3f;        // linear damping factor
-static f32 Kda = 0.001f;        // angular damping factor
+static f32 Kdl = 0.4257f;        // linear damping factor
+static f32 Krr = Kdl * 30.f;
+static f32 Kda = 0.05f;        // angular damping factor
 
-static vec3s Gravity = {0.0f, 0.0f, -15.0f};
+static v3 Gravity = {0.0f, 0.0f, -15.0f};
 
-static u16 subStepAmount = 8;
+static u16 subStepAmount = 4;
 
 typedef struct rigid_body {
   u32 id;
@@ -15,36 +16,36 @@ typedef struct rigid_body {
   f32 invMass;
   f32 friction;
 
-  vec3s velocity;
-  vec3s velocity0;
-  vec3s angularVelocity;
+  v3 velocity;
+  v3 velocity0;
+  v3 angularVelocity;
 
   // Position (center of mass)
-  vec3s position;
-  vec3s forwardAxis;
-  vec3s sideAxis;
+  v3 position;
+  v3 forwardAxis;
+  v3 sideAxis;
   // Body origin (not center of mass)
-  vec3s origin;
+  v3 origin;
 
   // Location of center of mass relative to the body origin
-  vec3s localCenter;
+  v3 localCenter;
 
-  mat3s invBodyInertiaTensor;
+  m3x3 invBodyInertiaTensor;
   quat orientationQuat;
   i32 shapeNum;
 
   // auxiliary quantities
-  mat3s orientation;
-  mat3s invWorlInertiaTensor;
-  vec3s deltaPosition;
-  vec3s acceleration;
+  m3x3 orientation;
+  m3x3 invWorlInertiaTensor;
+  v3 deltaPosition;
+  v3 acceleration;
 } rigid_body;
 
 typedef struct contact_point {
-  vec3s localPointA;
-  vec3s localPointB;
-  vec3s point;
-  vec3s normal;
+  v3 localPointA;
+  v3 localPointB;
+  v3 point;
+  v3 normal;
   f32 separation;
   f32 normalImpulse;
   f32 tangentImpulse[2];
@@ -63,17 +64,17 @@ typedef struct joint_base {
   rigid_body *bodyB;
 
   u32 id;
-  vec3s localOriginAnchorA;
-  vec3s localOriginAnchorB;
+  v3 localOriginAnchorA;
+  v3 localOriginAnchorB;
 
   // Local anchors relative to center of mass
-  vec3s localAnchorA;
-  vec3s localAnchorB;
+  v3 localAnchorA;
+  v3 localAnchorB;
 
   f32 invMassA;
   f32 invMassB;
-  mat3s invIA;
-  mat3s invIB;
+  m3x3 invIA;
+  m3x3 invIB;
 
   // Soft constraint
   f32 herz;
@@ -86,17 +87,17 @@ typedef struct joint_base {
 typedef struct hinge_joint {
   joint_base base;
 
-  vec4s localAxisARotation;
-  vec4s localAxisBRotation;
+  v4 localAxisARotation;
+  v4 localAxisBRotation;
 
   // constraint axii.
-  vec3s hingeAxis;
+  v3 hingeAxis;
 
   f32 motorImpulse;
   f32 motorTorque;
 
-  vec2s totalLambda;
-  mat2s invEffectiveMass;
+  v2 totalLambda;
+  m2x2 invEffectiveMass;
 
 } hinge_joint;
 
@@ -104,38 +105,36 @@ typedef struct distance_joint {
   joint_base base;
 
   // Distance constraint
-  vec3s totalImpulse;
+  v3 totalImpulse;
 
-  vec3s centerDiff0;
-  mat3s invEffectiveMass;
+  v3 centerDiff0;
+  m3x3 invEffectiveMass;
 } distance_joint;
 
 typedef struct slider_joint {
   joint_base base;
 
-  vec3s slideAxis;
+  v3 slideAxis;
   f32 rangeMin;
   f32 rangeMax;
 
   // Distance constraint
-  vec2s totalImpulse;
+  v2 totalImpulse;
   f32 totalLimitImpulse;
 
-  vec3s centerDiff0;
-  mat2s invEffectiveMass;
+  v3 centerDiff0;
+  m2x2 invEffectiveMass;
 
 } slider_joint;
 
 typedef struct axis_joint {
   joint_base base;
 
-  vec3s slideAxis;
-  f32 rangeMin;
-  f32 rangeMax;
+  v3 slideAxis;
 
   f32 totalImpulse;
 
-  vec3s centerDiff0;
+  v3 centerDiff0;
   f32 invEffectiveMass;
 
 } axis_joint;
@@ -158,12 +157,11 @@ typedef struct joint {
   };
 } joint;
 
-inline void addForceToPoint(vec3s f, vec3s p, vec3s cm, vec3s* forcesIn, vec3s* torquesIn) {
-  vec3s force = *forcesIn;
-  vec3s torque = *torquesIn;
+inline void addForceToPoint(v3 f, v3 p, v3 cm, v3* forcesIn, v3* torquesIn) {
+  v3 force = *forcesIn;
+  v3 torque = *torquesIn;
   force = force + f;
-  torque = torque + glms_vec3_cross(p - cm, f);
-
+  torque = torque + v3_cross(p - cm, f);
   *forcesIn = force;
   *torquesIn = torque;
 }

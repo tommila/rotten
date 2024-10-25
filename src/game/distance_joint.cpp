@@ -1,28 +1,40 @@
+#include "all.h"
 // Constraint derivations from
 // Constraints Derivation for Rigid Body Simulation in 3D by Daniel Chappuis
 
 // The distance joint only allows arbitrary rotation between two bodies but no translation.
 // It has three degrees of freedom.
 static void applyLinearVelocityStep(rigid_body* bodyA, rigid_body* bodyB, distance_joint* joint,
-                              vec3s impulse) {
-  mat3s qA = bodyA->orientation;
-  mat3s qB = bodyB->orientation;
+                              v3 impulse) {
+  m3x3 iA = bodyA->invWorlInertiaTensor; 
+  m3x3 iB = bodyB->invWorlInertiaTensor; 
+  
+  v3 localAnchorA = joint->base.localAnchorA; 
+  v3 localAnchorB = joint->base.localAnchorB; 
+ 
+  m3x3 qA = bodyA->orientation;
+  m3x3 qB = bodyB->orientation;
 
-  vec3s rA = qA * joint->base.localAnchorA;
-  vec3s rB = qB * joint->base.localAnchorB;
+  v3 rA = qA * localAnchorA;
+  v3 rB = qB * localAnchorB;
 
   f32 mA = joint->base.invMassA, mB = joint->base.invMassB;
-  mat3s iA = joint->base.invIA, iB = joint->base.invIB;
 
-  bodyA->velocity = bodyA->velocity - mA * impulse;
-  bodyA->angularVelocity = bodyA->angularVelocity - iA * glms_vec3_cross(rA, impulse);
+  v3 vA = mA * impulse;
+  v3 wA = iA * v3_cross(rA, impulse);
 
-  bodyB->velocity = bodyB->velocity + mB * impulse;
-  bodyB->angularVelocity = bodyB->angularVelocity + iB * glms_vec3_cross(rB, impulse);
+  v3 vB = mB * impulse;
+  v3 wB = iB * v3_cross(rB, impulse);
+
+  bodyA->velocity = bodyA->velocity - vA;
+  bodyA->angularVelocity = bodyA->angularVelocity - wA;
+  
+  bodyB->velocity = bodyB->velocity + vB;
+  bodyB->angularVelocity = bodyB->angularVelocity + wB;
 }
 
 inline void setupDistanceJoint(joint* j, rigid_body* rbA, rigid_body* rbB,
-			       vec3s pivotA, vec3s pivotB, vec3s axisInA, vec3s axisInB,
+			       v3 pivotA, v3 pivotB, v3 axisInA, v3 axisInB,
 			       f32 herz, f32 damping) {
   j->type = joint_type_distance;
   j->distance.base.herz = herz;
@@ -44,30 +56,33 @@ inline void preSolveDistanceJoint(distance_joint* joint, f32 h) {
   joint->base.invMassB = bodyB->invMass;
   joint->base.invMassA = bodyA->invMass;
 
-  joint->base.invIB = bodyB->invWorlInertiaTensor;
-  joint->base.invIA = bodyA->invWorlInertiaTensor;
+  joint->base.invIA = bodyA->invWorlInertiaTensor; 
+  joint->base.invIB = bodyB->invWorlInertiaTensor; 
+  
+  v3 localAnchorA = joint->base.localAnchorA; 
+  v3 localAnchorB = joint->base.localAnchorB; 
+ 
+  m3x3 qA = bodyA->orientation;
+  m3x3 qB = bodyB->orientation;
 
-  f32 mInvA = joint->base.invMassA, mInvB = joint->base.invMassB;
-  mat3s iA = joint->base.invIA, iB = joint->base.invIB;
+  v3 rA = qA * localAnchorA;
+  v3 rB = qB * localAnchorB;
 
-  mat3s qA = bodyA->orientation;
-  mat3s qB = bodyB->orientation;
+  v3 centerDiff = bodyB->position - bodyA->position;
 
-  vec3s rA = qA * joint->base.localAnchorA;
-  vec3s rB = qB * joint->base.localAnchorB;
   // constraint setup
   {
-    mat3s S1 = glms_mat3_skew(rA);
-    mat3s S2 = glms_mat3_skew(rB);
+    m3x3 S1 = m3x3_skew_symmetric(rA);
+    m3x3 S2 = m3x3_skew_symmetric(rB);
 
-    mat3s K =
-      (mat3s)GLMS_MAT3_IDENTITY_INIT * mInvA +
-      S1 * iA * glms_mat3_transpose(S1) +
-      (mat3s)GLMS_MAT3_IDENTITY_INIT * mInvB +
-      S2 * iB * glms_mat3_transpose(S2);
+    m3x3 K =
+      (m3x3)M3X3_IDENTITY * joint->base.invIA +
+      S1 * joint->base.invIA * m3x3_transpose(S1) +
+      (m3x3)M3X3_IDENTITY * joint->base.invIB +
+      S2 * joint->base.invIB * m3x3_transpose(S2);
 
-    joint->invEffectiveMass = glms_mat3_inv(K);
-    joint->centerDiff0 = bodyB->position - bodyA->position;
+    joint->invEffectiveMass = m3x3_inverse(K);
+    joint->centerDiff0 = centerDiff;
 
     const f32 zeta = joint->base.damping;      // damping
     f32 omega = 2.0f * PI * joint->base.herz;  // frequency
@@ -86,17 +101,22 @@ inline void solveDistanceJoint(distance_joint* joint, f32 h, f32 invH,
   // point-to-point constraint
   // This constraint removes three translation degrees of freedom from the system
   if (1) {
-    vec3s vA = bodyA->velocity;
-    vec3s wA = bodyA->angularVelocity;
-    vec3s vB = bodyB->velocity;
-    vec3s wB = bodyB->angularVelocity;
+    v3 vA = bodyA->velocity;
+    v3 wA = bodyA->angularVelocity;
 
-    mat3s qA = bodyA->orientation;
-    mat3s qB = bodyB->orientation;
-    vec3s rA = qA * joint->base.localAnchorA;
-    vec3s rB = qB * joint->base.localAnchorB;
+    v3 vB = bodyB->velocity;
+    v3 wB = bodyB->angularVelocity;
 
-    vec3s bias = GLMS_VEC3_ZERO_INIT;
+    m3x3 qA = bodyA->orientation;
+    m3x3 qB = bodyB->orientation;
+
+    v3 localAnchorA = joint->base.localAnchorA;
+    v3 localAnchorB = joint->base.localAnchorB;
+
+    v3 rA = qA * localAnchorA;
+    v3 rB = qB * localAnchorB;
+
+    v3 bias = V3_ZERO;
     f32 massScale = 1.0f;
     f32 impulseScale = 0.0f;
 
@@ -105,15 +125,15 @@ inline void solveDistanceJoint(distance_joint* joint, f32 h, f32 invH,
     // =>
     // CDot = (v2 + ω2 × r2 − v1 − ω1 × r1)
     // Jv = CDot
-    vec3s jv = ((vA - glms_vec3_cross(rA, wA)) - vB + glms_vec3_cross(rB, wB));
+    v3 jv = ((vA - v3_cross(rA, wA)) - vB + v3_cross(rB, wB));
 
     if (useBias) {
-      vec3s dcA = bodyA->deltaPosition;
-      vec3s dcB = bodyB->deltaPosition;
+      v3 dcA = bodyA->deltaPosition;
+      v3 dcB = bodyB->deltaPosition;
 
       // Calculate translation bias velocity
       // bias = beta / h * CPos
-      vec3s CPos = (dcB - dcA) + joint->centerDiff0 + rB - rA;
+      v3 CPos = (dcB - dcA) + joint->centerDiff0 + rB - rA;
 
       bias = -joint->base.biasCoefficient * CPos;
       massScale = joint->base.massCoefficient;
@@ -124,9 +144,10 @@ inline void solveDistanceJoint(distance_joint* joint, f32 h, f32 invH,
     // Calculate lagrange multiplier:
     //
     // lambda = -K^-1 (Jv + b)
-    vec3s impulse = massScale * (joint->invEffectiveMass * (jv + bias)) -
-                    impulseScale * joint->totalImpulse;
-    vec3s newImpulse = joint->totalImpulse + impulse;
+    m3x3 invEffectiveMass = joint->invEffectiveMass;
+    v3 impulse = massScale * (invEffectiveMass * (jv + bias)) -
+      impulseScale * joint->totalImpulse;
+    v3 newImpulse = joint->totalImpulse + impulse;
     // Store total impulse
     impulse = newImpulse - joint->totalImpulse;
     joint->totalImpulse = newImpulse;

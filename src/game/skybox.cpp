@@ -2,155 +2,137 @@
 
 // TODO: Create skybox by hand, no need to load it from cgltf
 
-static void skyboxCreateModel(game_state *state, memory_arena *permanentArena,
+f32 skyboxCubeVerts[] = {
+   1.0,  1.0,  1.0,
+   1.0, -1.0,  1.0,
+  -1.0, -1.0,  1.0,
+  -1.0,  1.0,  1.0,
+  
+   1.0,  1.0, -1.0,
+   1.0, -1.0, -1.0,
+  -1.0, -1.0, -1.0,
+  -1.0,  1.0, -1.0,
+};
+
+u32 skyboxCubeIndices[] = {
+  // UP
+  0, 1, 2,  
+  2, 3, 0,
+  // BOTTOM
+  4, 5, 6,  
+  6, 7, 4,
+  // FRONT
+  0, 4, 7, 
+  7, 3, 0,
+  // BACK
+  1, 5, 6,  
+  6, 2, 1,
+  // LEFT
+  3, 2, 6, 
+  6, 7, 3,
+  // RIGHT
+  0, 1, 5,
+  5, 4, 0
+};
+
+static void createSkyBox(car_game_state *game, memory_arena *permanentArena,
                               memory_arena *tempArena,
-                              rt_render_entry_buffer *rendererBuffer,
-                              utime assetModTime) {
-  skybox_object *skybox = &state->skybox;
+                              rt_command_buffer *rendererBuffer) {
+  if (game->skybox.vertexArrayHandle == 0) {
+    rt_command_create_vertex_buffer *cmd = rt_pushRenderCommand(
+      rendererBuffer, create_vertex_buffer);
+    cmd->vertexData = skyboxCubeVerts;
+    cmd->indexData = skyboxCubeIndices;
+    cmd->vertexDataSize = sizeof(skyboxCubeVerts);
+    cmd->indexDataSize = sizeof(skyboxCubeIndices);
+    cmd->isStreamData = false;
+    cmd->vertexBufHandle = &game->skybox.vertexBufferHandle;
+    cmd->indexBufHandle = &game->skybox.indexBufferHandle;
+    cmd->vertexArrHandle = &game->skybox.vertexArrayHandle;
 
-  utime modelModTime =
-      platformApi->diskIOReadModTime("./assets/models/Skybox/skybox.gltf");
-  if (assetModTime < modelModTime) {
-    cgltf_data *gltfData =
-        gltf_loadFile(tempArena, "./assets/models/Skybox/skybox.gltf");
+    cmd->vertexAttributes[0].count = 3;
+    cmd->vertexAttributes[0].offset = 0;
+    cmd->vertexAttributes[0].stride = 3 * sizeof(f32);
+    cmd->vertexAttributes[0].type = rt_data_type_f32;
 
-    mesh_data meshData = {0};
-    mesh_material_data matData = {0};
-    mat4 meshTransform;
-    cgltf_node *node = &gltfData->nodes[0];
-    gltf_readMeshData(tempArena, node, "./assets/models/Skybox/", &meshData,
-                      &meshTransform);
-    gltf_readMatData(node, "./assets/models/Skybox/", &matData);
-
-    skybox->elementNum = meshData.indexNum;
-    {
-      if (skybox->vertexArrayHandle == 0) {
-        rt_render_entry_create_vertex_buffer *cmd = rt_renderer_pushEntry(
-            rendererBuffer, rt_render_entry_create_vertex_buffer);
-        cmd->vertexData = meshData.vertexData;
-        cmd->indexData = meshData.indices;
-        cmd->vertexDataSize = meshData.vertexDataSize;
-        cmd->indexDataSize = meshData.indexDataSize;
-        cmd->isStreamData = false;
-        cmd->vertexBufHandle = &skybox->vertexBufferHandle;
-        cmd->indexBufHandle = &skybox->indexBufferHandle;
-        cmd->vertexArrHandle = &skybox->vertexArrayHandle;
-
-        cmd->vertexAttributes[0] = {.count = 3,
-                                    .offset = 0,
-                                    .stride = 8 * sizeof(f32),
-                                    .type = rt_renderer_data_type_f32},
-        cmd->vertexAttributes[1] = {.count = 3,
-                                    .offset = 3 * sizeof(f32),
-                                    .stride = 8 * sizeof(f32),
-                                    .type = rt_renderer_data_type_f32};
-        cmd->vertexAttributes[2] = {.count = 2,
-                                    .offset = 6 * sizeof(f32),
-                                    .stride = 8 * sizeof(f32),
-                                    .type = rt_renderer_data_type_f32};
-
-        skybox->elementNum = meshData.indexNum;
-      } else {
-        rt_render_entry_update_vertex_buffer *cmd = rt_renderer_pushEntry(
-            rendererBuffer, rt_render_entry_update_vertex_buffer);
-        cmd->vertexData = meshData.vertexData;
-        cmd->indexData = meshData.indices;
-        cmd->vertexDataSize = meshData.vertexDataSize;
-        cmd->indexDataSize = meshData.indexDataSize;
-        cmd->vertexBufHandle = skybox->vertexBufferHandle;
-        cmd->indexBufHandle = skybox->indexBufferHandle;
-      }
-    }
-    {
-      utime texModTime = platformApi->diskIOReadModTime(matData.imagePath);
-      if (assetModTime < texModTime) {
-        img_data skyboxImgData = importImage(tempArena, matData.imagePath, 4);
-        rt_render_entry_create_image *cmd =
-            rt_renderer_pushEntry(rendererBuffer, rt_render_entry_create_image);
-
-        cmd->width = skyboxImgData.width;
-        cmd->height = skyboxImgData.height;
-        cmd->depth = skyboxImgData.depth;
-        cmd->components = skyboxImgData.components;
-        cmd->pixels = skyboxImgData.pixels;
-        cmd->imageHandle = &skybox->texHandle;
-      }
-    }
+    game->skybox.elementNum = arrayLen(skyboxCubeIndices);
   }
-  {  // Terrain model pipeline init
-    utime vsShaderModTime =
-        platformApi->diskIOReadModTime("./assets/shaders/skybox.vs");
-    utime fsShaderModTime =
-        platformApi->diskIOReadModTime("./assets/shaders/skybox.fs");
-    if (assetModTime < vsShaderModTime || assetModTime < fsShaderModTime) {
-      shader_data skyboxShader =
-          importShader(tempArena, "./assets/shaders/skybox.vs",
-                       "./assets/shaders/skybox.fs");
-      if (skybox->programHandle == 0) {
-        rt_render_entry_create_shader_program *cmd = rt_renderer_pushEntry(
-            rendererBuffer, rt_render_entry_create_shader_program);
+  if (game->skybox.texHandle == 0){
+    rt_command_create_texture *cmd =
+      rt_pushRenderCommand(rendererBuffer, create_texture);
 
-        cmd->fragmentShaderData = (char *)skyboxShader.fsData;
-        cmd->vertexShaderData = (char *)skyboxShader.vsData;
+    cmd->image[0] = platformApi->loadImage("assets/bluecloud_ft.jpg", 3);
+    cmd->image[1] = platformApi->loadImage("assets/bluecloud_bk.jpg", 3);
+    cmd->image[2] = platformApi->loadImage("assets/bluecloud_up.jpg", 3);
+    cmd->image[3] = platformApi->loadImage("assets/bluecloud_dn.jpg", 3);
+    cmd->image[4] = platformApi->loadImage("assets/bluecloud_rt.jpg", 3);
+    cmd->image[5] = platformApi->loadImage("assets/bluecloud_lf.jpg", 3);
+    cmd->textureType = rt_texture_type_cubemap;
+    cmd->imageHandle = &game->skybox.texHandle;
+  }
+  { 
+    rt_shader_data skyboxShader =
+      importShader(tempArena, "./assets/shaders/skybox.vs",
+                   "./assets/shaders/skybox.fs");
+    if (game->skybox.programHandle == 0) {
+      rt_command_create_shader_program *cmd = rt_pushRenderCommand(
+        rendererBuffer, create_shader_program);
 
-        cmd->shaderProgramHandle = &skybox->programHandle;
-      } else {
-        rt_render_entry_update_shader_program *cmd = rt_renderer_pushEntry(
-            rendererBuffer, rt_render_entry_update_shader_program);
+      cmd->fragmentShaderData = skyboxShader.fsData;
+      cmd->vertexShaderData = skyboxShader.vsData;
 
-        cmd->fragmentShaderData = (char *)skyboxShader.fsData;
-        cmd->vertexShaderData = (char *)skyboxShader.vsData;
-        cmd->shaderProgramHandle = &skybox->programHandle;
-      }
+      cmd->shaderProgramHandle = &game->skybox.programHandle;
+    } else {
+      rt_command_update_shader_program *cmd = rt_pushRenderCommand(
+        rendererBuffer,update_shader_program);
+
+      cmd->fragmentShaderData = skyboxShader.fsData;
+      cmd->vertexShaderData = skyboxShader.vsData;
+      cmd->shaderProgramHandle = &game->skybox.programHandle;
     }
   }
 }
 
-static void renderSkybox(game_state* game, memory_arena *tempArena,
-                       rt_render_entry_buffer *rendererBuffer, mat4s view,
-                       mat4s proj) {
-  skybox_object *skybox = &game->skybox;
+static void renderSkybox(car_game_state* game, memory_arena *tempArena,
+                       rt_command_buffer *rendererBuffer, m4x4 view,
+                       m4x4 proj) {
   {
-    rt_render_entry_apply_program *cmd =
-        rt_renderer_pushEntry(rendererBuffer, rt_render_entry_apply_program);
-    cmd->programHandle = skybox->programHandle;
-    cmd->ccwFrontFace = true;
-  }
-  {
-    rt_render_entry_apply_bindings *cmd =
-        rt_renderer_pushEntry(rendererBuffer, rt_render_entry_apply_bindings);
-    cmd->indexBufferHandle = skybox->indexBufferHandle;
-    cmd->vertexBufferHandle = skybox->vertexBufferHandle;
-    cmd->vertexArrayHandle = skybox->vertexArrayHandle;
+    rt_command_apply_bindings *cmd =
+        rt_pushRenderCommand(rendererBuffer, apply_bindings);
+    cmd->indexBufferHandle = game->skybox.indexBufferHandle;
+    cmd->vertexBufferHandle = game->skybox.vertexBufferHandle;
+    cmd->vertexArrayHandle = game->skybox.vertexArrayHandle;
     cmd->textureBindings[0] =
-        (sampler_binding_entry){.textureHandle = game->skybox.texHandle,
-                                .samplerHandle = game->skybox.samplerHandle};
+        (rt_binding_data){
+        .textureHandle = game->skybox.texHandle,
+        .textureType = rt_texture_type_cubemap,
+        .samplerHandle = game->skybox.samplerHandle};
   }
   {
-    rt_render_entry_apply_uniforms *cmd =
-        rt_renderer_pushEntry(rendererBuffer, rt_render_entry_apply_uniforms);
-    cmd->shaderProgram = skybox->programHandle;
-    mat4s *vsParams = pushType(tempArena, mat4s);
-    mat4s position = glms_translate_make(game->car.body.chassis.position);
-    mat4s scale = glms_scale_make({5000.f, 5000.f, 5000.f});
-    *vsParams = proj * view * position * scale;
-    cmd->uniforms[0] = (uniform_entry){
-        .type = uniform_type_mat4, .name = "mvp", .data = vsParams};
+    rt_command_apply_program *cmd =
+        rt_pushRenderCommand(rendererBuffer, apply_program);
+    cmd->programHandle = game->skybox.programHandle;
+    cmd->enableCull = false;
   }
   {
-    rt_render_entry_draw_elements *cmd =
-        rt_renderer_pushEntry(rendererBuffer, rt_render_entry_draw_elements);
-    cmd->numElement = skybox->elementNum;
+    rt_command_apply_uniforms *cmd =
+        rt_pushRenderCommand(rendererBuffer, apply_uniforms);
+    cmd->shaderProgram = game->skybox.programHandle;
+    m4x4 *vsParams = pushType(tempArena, m4x4);
+    *vsParams = proj * view;
+    cmd->uniforms[0] = (rt_uniform_data){
+        .type = rt_uniform_type_mat4,
+        .name = STR("mvp"),
+        .data = vsParams};
+    cmd->uniforms[1] = (rt_uniform_data){
+        .type = rt_uniform_type_int,
+        .name = STR("tex"),
+        .data = &game->skybox.samplerHandle};
+  }
+  {
+    rt_command_draw_elements *cmd =
+        rt_pushRenderCommand(rendererBuffer, draw_elements);
+    cmd->numElement = game->skybox.elementNum;
   }
 }
 
-static void skyboxInit(game_state *game,
-		       memory_arena *permanentArena,
-		       memory_arena *tempArena,
-		       rt_render_entry_buffer *rendererBuffer,
-		       b32 reload, f32 assetModTime) {
-  if (reload || !game->skybox.initialized) {
-    skyboxCreateModel(game, permanentArena, tempArena, rendererBuffer, assetModTime);
-    game->skybox.initialized = true;
-  }
-}

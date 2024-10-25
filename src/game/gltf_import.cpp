@@ -1,22 +1,22 @@
 
 #define LOAD_ATTRIBUTE(accesor, numComp, dataType, dstPtr)               \
   {                                                                      \
-    int n = 0;                                                           \
+    i32 n = 0;                                                           \
     dataType* buffer = (dataType*)accesor->buffer_view->buffer->data +   \
                        accesor->buffer_view->offset / sizeof(dataType) + \
                        accesor->offset / sizeof(dataType);               \
-    for (unsigned int k = 0; k < accesor->count; k++) {                  \
-      for (int l = 0; l < numComp; l++) {                                \
+    for (unsigned i32 k = 0; k < accesor->count; k++) {                  \
+      for (i32 l = 0; l < numComp; l++) {                                \
         dstPtr[numComp * k + l] = buffer[n + l];                         \
       }                                                                  \
-      n += (int)(accesor->stride / sizeof(dataType));                    \
+      n += (i32)(accesor->stride / sizeof(dataType));                    \
     }                                                                    \
   }
 
 void gltf_readMeshData(memory_arena* tempArena, const cgltf_node* node,
-                       const char* path, mesh_data* meshData, mat4* meshTransform) {
+                       const char* path, mesh_data* meshData, m4x4* meshTransform) {
   cgltf_mesh* cgltfMesh = node->mesh;
-  cgltf_node_transform_local(node, **meshTransform);
+  cgltf_node_transform_local(node, meshTransform->arr);
   if (cgltfMesh != NULL) {
     for (cgltf_size primitiveIndex = 0;
          primitiveIndex < cgltfMesh->primitives_count; ++primitiveIndex) {
@@ -115,50 +115,40 @@ void gltf_readMeshData(memory_arena* tempArena, const cgltf_node* node,
       meshData->vertexData = (f32*)pushSize(tempArena, vertexDataSize);
       f32 *vIt = meshData->vertexData;
       for (u32 vIdx = 0; vIdx < posNum / 3; vIdx++) {
-	*vIt = positions[vIdx * 3];
-	vIt++;
-	*vIt = positions[vIdx * 3 + 1];
-	vIt++;
-	*vIt = positions[vIdx * 3 + 2];
-	vIt++;
+        *vIt = positions[vIdx * 3];
+        vIt++;
+        *vIt = positions[vIdx * 3 + 1];
+        vIt++;
+        *vIt = positions[vIdx * 3 + 2];
+        vIt++;
 
-	if (normalNum) {
-	  *vIt = normals[vIdx * 3];
-	  vIt++;
-	  *vIt = normals[vIdx * 3 + 1];
-	  vIt++;
-	  *vIt = normals[vIdx * 3 + 2];
-	  vIt++;
-	}
+        if (normalNum) {
+          *vIt = normals[vIdx * 3];
+          vIt++;
+          *vIt = normals[vIdx * 3 + 1];
+          vIt++;
+          *vIt = normals[vIdx * 3 + 2];
+          vIt++;
+        }
 
-	if (texCoordNum) {
-	  *vIt = texCoords[vIdx * 2];
-	  vIt++;
-	  *vIt = texCoords[vIdx * 2 + 1];
-	  vIt++;
-	}
+        if (texCoordNum) {
+          *vIt = texCoords[vIdx * 2];
+          vIt++;
+          *vIt = texCoords[vIdx * 2 + 1];
+          vIt++;
+        }
 
-	if (colorNum) {
-	  *vIt = colors[vIdx * 4 ];
-	  vIt++;
-	  *vIt = colors[vIdx * 4 + 1];
-	  vIt++;
-	  *vIt = colors[vIdx * 4 + 2];
-	  vIt++;
-	  *vIt = colors[vIdx * 4 + 3];
-	  vIt++;
-	}
+        if (colorNum) {
+          *vIt = colors[vIdx * 4 ];
+          vIt++;
+          *vIt = colors[vIdx * 4 + 1];
+          vIt++;
+          *vIt = colors[vIdx * 4 + 2];
+          vIt++;
+          *vIt = colors[vIdx * 4 + 3];
+          vIt++;
+        }
       }
-
-      // u32 pOffset = 0;
-
-      // memcpy(meshData->vertexData + pOffset, positions, posMemSize);
-      // pOffset += posMemSize;
-      // memcpy(meshData->vertexData + pOffset, normals, normalMemSize);
-      // pOffset += normalMemSize;
-      // memcpy(meshData->vertexData + pOffset, texCoords, texMemSize);
-      // pOffset += texMemSize;
-      // memcpy(meshData->vertexData + pOffset, colors, colorMemSize);
 
       meshData->vertexNum = vertexNum;
       meshData->vertexComponentNum = vertexComponentNum;
@@ -211,21 +201,20 @@ void gltf_readMatData(const cgltf_node* node, const char* path,
       }
 
       const cgltf_float* col = mat->pbr_metallic_roughness.base_color_factor;
-      memcpy(matData->baseColor, col, sizeof(f32) * 4);
+      memcpy(matData->baseColor.arr, col, sizeof(f32) * 4);
     }
   }
 }
 
-cgltf_data* gltf_loadFile(memory_arena* tempArena, const char* filePath) {
-  u32 fileSize = 0;
-  void* data;
-  loadFile(tempArena, filePath, false, data, &fileSize);
+cgltf_data* gltf_loadFile(memory_arena* tempArena, str8 filePath) {
+  usize fileSize = 0;
+  void* data = platformApi->loadBinaryFile((const char*)filePath.buffer, &fileSize);
   cgltf_options options = {};
   cgltf_data* cgltfData = nullptr;
 
   ASSERT(cgltf_parse(&options, data, fileSize, &cgltfData) ==
          cgltf_result_success);
-  ASSERT(cgltf_load_buffers(&options, cgltfData, filePath) ==
+  ASSERT(cgltf_load_buffers(&options, cgltfData, (const char*)filePath.buffer) ==
          cgltf_result_success);
 
   return cgltfData;

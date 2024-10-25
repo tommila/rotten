@@ -1,55 +1,63 @@
-# Rotten engine
-Cross-platform C/C++ game engine with minimal external libraries and frameworks.
+# Game and engine made from scratch
+Cross-platform C/C++ game made from scratch using only minimal set of external libraries.
 
-This project is a work in progress and will be subject to changes.
+Current features:
+- Opengl renderer
+- Audio mixing and engine synthesizer
+- Car physics simulation
+- UI library
+- Math library
+- Heightmap terrain generation
+- Custom memory handling
+
+Please note that active development happens in a private repository, so this one may not be updated frequently.
 
 ## Libraries
+I try to use as few external libraries as possible and when I have to I try to use header only libraries.
+
+Current libraries in use:
 - SDL2
-- nuklear ui
 - stb_image
+- stb_vorbis
 - cgltf
 - cglm
 
 ## Building
-Rotten uses Make tool for building and it has two separate makefiles, one for linux builds and one for windows via mingw.
-Assets are stripped except shaders.
-
-### Linux build and run
+Building is handled by a simple bash script.
 ```
-git submodule update --init
 mkdir build
-make
 
-./build_assets.sh
+# Builds all game binary files
+./build.sh
 
-cd build
-./run.sh
+# Builds spesific binary file
+./build.sh platform|game|renderer
+
+# Builds SDL2 from source. Before building SDL2 is downloaded from github and extractet to
+# local SDL2 folder
+./build.sh sdl
+
+# Builds windows game binary files using mingw64 compiler (which should be installed in advance).
+./build.sh windows
+
+# Builds a release versio for linux. In practice this means compiling the project in some old
+# stable linux distribution thus maximizing compatibility for all linux distributions, in theory
+# at leasts. I use docker for this purpose and a debian jessie image which is quite old by now. 
+./build.sh release
 ```
 
-### Windows build and run
-```
-git submodule update --init
-mkdir build
-make -f Makefile.mingw32
+## Running
+Excecute the `run.sh|bat` file inside the build folder.
 
-./build_assets.sh
-
-cd build
-run.bat
-```
-
-## Demo projects
-### Desert cruise - tech demo ###
-Drive a physically simulated car in a world greated dynamically from heightmap.
-[![Cruisin](https://img.youtube.com/vi/bGzOv2R_E20/0.jpg)](https://youtu.be/bGzOv2R_E20)
+## Hot-reloading
+This project supports hot-reloading, which means you can update the game code while the program is still running, without needing to close and restart it. Most changes will take effect immediately, but some updates, like changes to header files, will still require a full program restart. Additionally, the project currently supports asset hot-reloading but only for shader files.
 
 ## Tools
-- `build-assets.sh` Copies all asset files from assets to build/assets and also compiles all the shaders.
-- `build-shaders.sh` Compiles all shaders (currently just copies all modified shader files)
+- `build-assets.sh <PATH> [--daemon|-d]` Currently all it does is copies all asset files from assets to build/assets. Daemon mode observers file changes and automatically copies modified files. Note that for asset license reasons I've stripped all assets from this repository.
 
-Both tools support daemon mode via user argument "-d" or "--daemon", meaning that all modified or copied assets in `assets/` folder are copied/build to `build/assets` folder.
-
-## TODO
-- Remove nuklear and create own minimal UI libary
-- Remove cglm and create own minimal math libary
-- Add audio support
+## Next things to work on
+- Simplify platform and renderer api.
+- More physics and rework joint position solving
+- SSE2/SSE3 SIMD
+- Shadows
+- Particles

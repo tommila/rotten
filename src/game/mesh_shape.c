@@ -5,7 +5,7 @@ inline mesh_data mesh_GridShape(memory_arena *arena,
 				u16 cellsY,
 				b32 hasTexture,
 				b32 hasColor,
-				primitive_type type) {
+				rt_primitive_type type) {
   mesh_data data = {0};
 
   u32 vertexNum = cellsX * cellsY;

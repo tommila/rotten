@@ -5,24 +5,24 @@
    {0.f, 0.f, 0.f}};
 
 typedef struct shape_box {
-  vec3s min;
-  vec3s max;
-  vec3s size;
-  vec3s center;
+  v3 min;
+  v3 max;
+  v3 size;
+  v3 center;
 } shape_box;
 
 typedef struct shape_plane {
-  vec3s normal;
+  v3 normal;
   f32 d;
 } shape_plane;
 
 typedef struct shape_sphere {
-  vec3s p;
+  v3 p;
   f32 radius;
 } shape_sphere;
 
 typedef struct shape_point {
-  vec3s p;
+  v3 p;
 } shape_point;
 
 typedef enum shape_type {

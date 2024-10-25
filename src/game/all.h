@@ -6,14 +6,11 @@
 // game source file, but it's added also to elsewhere because
 // LSP servers have problems with parsing the info.
 
-#include <string.h>
-
-#include "../../third_party/cglm/include/cglm/struct.h"
-
 #include "../core/types.h"
 #include "../core/core.h"
-#include "../common/math.h"
+#include "../core/math.h"
 #include "../core/mem.h"
+#include "../core/string.h"
 #include "../core/rotten_renderer.h"
 #include "../rotten_platform.h"
 
@@ -37,19 +34,17 @@ static void* _realloc(void* ptr, usize newSize) {
 static void _free(void* ptr){}
 
 #define CGLTF_IMPLEMENTATION
-#define STB_IMAGE_IMPLEMENTATION
-
-#define STBI_MALLOC(size) _malloc(size)
-#define STBI_REALLOC(p, newSize) _realloc(p, newSize)
-#define STBI_FREE(p) _free(p)
 
 #define CGLTF_MALLOC(size) _malloc(size)
 #define CGLTF_FREE(p) _free(p)
 
-#include "../ext/stb_image.h"
+
 #include "../ext/cgltf.h"
 
+#include "audio_mixer.c"
+#include "engine_synthesizer.c"
 #include "shapes.c"
+#include "noise.c"
 
 #include "collision_solver.cpp"
 
@@ -59,6 +54,7 @@ static void _free(void* ptr){}
 #include "axis_joint.cpp"
 #include "joint.cpp"
 
+#include "ui_widgets.cpp"
 #include "ui.cpp"
 #include "mesh_shape.c"
 #include "gltf_import.cpp"
