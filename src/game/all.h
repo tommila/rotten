@@ -1,6 +1,11 @@
 #ifndef ALL_H
 #define ALL_H
 
+// Unity build header setup
+// all.h inclusion is only necessary to add once to the top of the
+// game source file, but it's added also to elsewhere because
+// LSP servers have problems with parsing the info.
+
 #include <string.h>
 
 #include "../../third_party/cglm/include/cglm/struct.h"

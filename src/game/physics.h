@@ -172,7 +172,7 @@ inline void calculateSoftConstraintProperties(f32 h, f32 hz, f32 damping,
                                               f32* biasCoeffOut,
                                               f32* impulseCoeffOut,
                                               f32* massCoeffOut) {
-  f32 zeta = damping;      // damping
+  f32 zeta = damping;          // damping
   f32 omega = 2.0f * PI * hz;  // frequency
   f32 biasCoefficient = omega / (2.0f * zeta + h * omega);
   f32 c = h * omega * (2.0f * zeta + h * omega);

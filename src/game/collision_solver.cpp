@@ -1,6 +1,7 @@
 #include "all.h"
-// Soft constraint contact resolver.
-// Adapted to Rotten engine from Erin Catto Solver2d library
+// Temporal Gauss-Seidel (TGS) with soft constraint contact resolver.
+// Adapted from Erin Catto Solver2d library
+// https://box2d.org/posts/2024/02/solver2d/
 
 // SPDX-FileCopyrightText: 2024 Erin Catto
 // SPDX-License-Identifier: MIT
@@ -227,9 +228,6 @@ static void integrateVelocities(float h,
 				vec3s extForces,
 				vec3s extTorques) {
   // Integrate velocities
-  if (body->id == 0) {
-    //printf("F %f %f %f\n T %f %f %f\n",extForces.x,extForces.y,extForces.z,extTorques.x,extTorques.y,extTorques.z);
-  }
   vec3s cmForce = -Kdl * body->velocity * glms_vec3_norm(body->velocity)
     + Gravity * body->mass
     + extForces;
@@ -250,7 +248,6 @@ static void integrateVelocities(float h,
 static void integratePositions(float h,
 			       rigid_body* body) {
   body->deltaPosition = body->deltaPosition + body->velocity * h;
-  // Compute auxiliary quantities
   quat q = {body->angularVelocity.x * h * 0.5f,
             body->angularVelocity.y * h * 0.5f,
             body->angularVelocity.z * h * 0.5f, 0.0f};

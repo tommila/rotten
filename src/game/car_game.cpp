@@ -66,20 +66,24 @@ extern "C" RT_GAME_UPDATE_AND_RENDER(gameUpdate) {
 		memArena_alloc(&tempMemory, KILOBYTES(256)), KILOBYTES(256));
   nk_context* ctx = rt_nuklear_alloc(&permanentMemory, &tempMemory);
 
+  b32 initialize = !game->initialized || reloaded;
+
   // Initial component initialization
-  if (game->initialized == false) {
+  if (initialize) {
     LOG(LOG_LEVEL_DEBUG, "terrain loaded");
+    if (!game->initialized) {
+      game->camera.fov = 90;
+      game->camera.position = {-30.0, 25.0, -30.0};
+      game->camera.front = {0.0, 0.0, 1.0};
+      game->camera.yaw = 0.f;
+      game->camera.pitch = -50.f;
 
-    game->camera.fov = 90;
-    game->camera.position = {-30.0, 25.0, -30.0};
-    game->camera.front = {0.0, 0.0, 1.0};
-    game->camera.yaw = 0.f;
-    game->camera.pitch = -50.f;
-
-    game->deve.drawState = DRAW_CAR | DRAW_TERRAIN;
-    game->deve.drawDevePanel = true;
-
-    ctx = rt_nuklear_setup(&permanentMemory, &tempMemory, &rendererBuffer, LOG, ASSERT_);
+      game->deve.drawState = DRAW_CAR | DRAW_TERRAIN;
+      game->deve.drawDevePanel = true;
+      game->initialized = true;
+    }
+    ctx = rt_nuklear_setup(&permanentMemory, &tempMemory, &rendererBuffer, LOG,
+                           ASSERT_);
 
     skyboxInit(game, &permanentMemory, &tempMemory, &rendererBuffer, reloaded,
                assetModTime);
@@ -88,18 +92,6 @@ extern "C" RT_GAME_UPDATE_AND_RENDER(gameUpdate) {
     carInit(game, &permanentMemory, &tempMemory, &rendererBuffer, reloaded,
             assetModTime);
     platformApi->renderer_flushCommandBuffer(&rendererBuffer);
-
-    game->initialized = true;
-  }
-
-  if (reloaded) {
-    ctx = rt_nuklear_setup(&permanentMemory, &tempMemory, &rendererBuffer, LOG, ASSERT_);
-    skyboxInit(game, &permanentMemory, &tempMemory, &rendererBuffer, reloaded,
-               assetModTime);
-    terrainInit(game, &permanentMemory, &tempMemory, &rendererBuffer, reloaded,
-                assetModTime);
-    carInit(game, &permanentMemory, &tempMemory, &rendererBuffer, reloaded,
-            assetModTime);
   }
 
   // Input event parsing.
@@ -258,9 +250,9 @@ extern "C" RT_GAME_UPDATE_AND_RENDER(gameUpdate) {
   clearCmd->height = 1080;
 
   // Draw functions
-  skyboxRender(game, &tempMemory, &rendererBuffer, viewM, projM);
-  terrainRender(game, &tempMemory, &rendererBuffer, viewM, projM);
-  carUpdateAndRender(game,&tempMemory, &rendererBuffer, viewM, projM,
+  renderSkybox(game, &tempMemory, &rendererBuffer, viewM, projM);
+  renderTerrain(game, &tempMemory, &rendererBuffer, viewM, projM);
+  renderAndUpdateCar(game,&tempMemory, &rendererBuffer, viewM, projM,
 		     pausePhysics ? 0 : delta);
 
   // Nuklear ui
@@ -270,6 +262,7 @@ extern "C" RT_GAME_UPDATE_AND_RENDER(gameUpdate) {
     ctx = rt_nuklear_draw(&tempMemory, &rendererBuffer, platformApi);
   }
 
+  // TODO: Something wonky with counter values, figure it out.
   u64 rendererStartCount = platformApi->getPerformanceCounter();
   platformApi->renderer_flushCommandBuffer(&rendererBuffer);
 
@@ -297,8 +290,6 @@ extern "C" RT_GAME_UPDATE_AND_RENDER(gameUpdate) {
     game->profiler.simulationAcc = 0;
     game->profiler.totalAcc = 0;
   };
-
-  game->initialized = true;
 
   return quit;
 }
