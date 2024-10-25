@@ -1,5 +1,8 @@
 # Game and engine made from scratch
 Cross-platform C/C++ game made from scratch using only minimal set of external libraries.
+![Intro](https://github.com/user-attachments/assets/1b34269c-a4df-47c5-82b9-dffaaeda060a)
+![Stats](https://github.com/user-attachments/assets/f8d37a63-bacb-4a8c-af5a-f6cb5a49d0df)
+![Visual](https://github.com/user-attachments/assets/53997ed6-1026-4fb1-8662-a3cf828ded40)
 
 Current features:
 - Opengl renderer
