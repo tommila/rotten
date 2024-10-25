@@ -1,0 +1,55 @@
+# Buildsystem
+bin
+build
+build-w32
+compile_commands.json
+assets/modfile
+
+# C/C++ generated
+*.a
+*.ax
+*.d
+*.dll
+*.lib
+*.lo
+*.o
+*.os
+*.ox
+*.Plo
+*.so
+
+# ccls
+.ccls-cache/
+
+# clangd
+.clangd/
+.cache/
+
+# Gprof
+gmon.out
+
+# Tags
+# https://github.com/github/gitignore/blob/master/Global/Tags.gitignore
+# Ignore tags created by etags, ctags, gtags (GNU global) and cscope
+TAGS
+!TAGS/
+tags
+*.tags
+!tags/
+gtags.files
+GTAGS
+GRTAGS
+GPATH
+cscope.files
+cscope.out
+cscope.in.out
+cscope.po.out
+
+# Linux
+*~
+.directory
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+.history/
